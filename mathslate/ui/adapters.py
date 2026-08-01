@@ -53,6 +53,12 @@ def detect_frontend() -> Frontend:
             return Frontend.MARIMO
     if "google.colab" in sys.modules:
         return Frontend.COLAB
+    # JupyterLite's Pyodide kernel runs IPython in a Web Worker, but its shell
+    # is not named ``ZMQInteractiveShell``.  It is still a live Jupyter
+    # kernel: widgets can send updates through the comm channel just as they
+    # do in a server-backed notebook.
+    if sys.platform == "emscripten":
+        return Frontend.JUPYTER
     shell = _ipython_shell()
     if shell in {"ZMQInteractiveShell"}:
         return Frontend.JUPYTER

@@ -112,6 +112,14 @@ def test_the_frontend_adapter_sees_each_environment(monkeypatch: pytest.MonkeyPa
     assert detect_frontend() is Frontend.COLAB
 
 
+def test_the_frontend_adapter_recognizes_jupyterlite(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pyodide has an IPython kernel but not a ZMQInteractiveShell name."""
+    from mathslate.ui import Frontend, detect_frontend
+
+    monkeypatch.setattr(sys, "platform", "emscripten")
+    assert detect_frontend() is Frontend.JUPYTER
+
+
 def _stdout_of(cell: Any) -> str:
     for output in cell.get("outputs", []):
         if output.get("output_type") == "stream" and output.get("name") == "stdout":
