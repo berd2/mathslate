@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import math
 import sys
+import warnings
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -394,11 +395,13 @@ class PlotResult:
             import ipywidgets as widgets
         except ImportError as error:
             if sys.platform == "emscripten":
-                raise UnsupportedInputError(
-                    "ipywidgets is not installed in this JupyterLite kernel. Run "
-                    "`import piplite; await piplite.install(['nbformat', "
-                    "'ipywidgets', 'anywidget'])` once, then re-run this cell."
-                ) from error
+                warnings.warn(
+                    "range_controls() is unavailable because this JupyterLite "
+                    "kernel has no ipywidgets; showing the regular Plotly graph.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                return self._figure
             raise UnsupportedInputError(
                 "ipywidgets is not installed. `pip install mathslate[jupyter]`."
             ) from error
@@ -410,11 +413,13 @@ class PlotResult:
             figure_widget = go.FigureWidget(self._figure)
         except ImportError as error:
             if sys.platform == "emscripten":
-                raise UnsupportedInputError(
-                    "this JupyterLite kernel still needs `anywidget`. Run "
-                    "`import piplite; await piplite.install(['nbformat', "
-                    "'ipywidgets', 'anywidget'])` once, then re-run this cell."
-                ) from error
+                warnings.warn(
+                    "range_controls() is unavailable because this JupyterLite "
+                    "kernel has no anywidget; showing the regular Plotly graph.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                return self._figure
             raise UnsupportedInputError(
                 "this Plotly version's FigureWidget also needs `anywidget`. "
                 "`pip install mathslate[jupyter]` installs both."
@@ -811,9 +816,27 @@ class PlotResult:
         script, missing deps, or raw data with nothing to resample — this
         shows exactly what plot() has always shown: the plain figure.
         """
-        from IPython.display import display
+        from IPython.display import HTML, display
 
-        display(self.range_controls() if self._wants_live_range_controls() else self._figure)
+        if self._wants_live_range_controls():
+            display(self.range_controls())
+            return
+        try:
+            display(self._figure)
+        except ValueError as error:
+            # A partially initialized Pyodide kernel can render HTML but has
+            # not yet installed nbformat, which Plotly's MIME renderer checks
+            # before producing output. Give the learner the normal graph and
+            # a warning instead of exposing that implementation traceback.
+            if sys.platform != "emscripten" or "nbformat" not in str(error):
+                raise
+            warnings.warn(
+                "JupyterLite has not loaded nbformat yet; showing a regular "
+                "Plotly graph without range controls.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            display(HTML(self._figure.to_html(full_html=False, include_plotlyjs="cdn")))
 
     # A result must display wherever the figure it wraps would, so it offers
     # every hook the figure offers rather than picking one.

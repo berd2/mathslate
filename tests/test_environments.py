@@ -133,6 +133,19 @@ def test_jupyterlite_report_gives_a_piplite_install_command(
     assert "await piplite.install" in adapters.frontend_report()
 
 
+def test_jupyterlite_missing_widgets_warns_and_returns_a_plain_figure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing optional widget must never turn a graph into a traceback."""
+    from mathslate import plot, sin, x
+
+    monkeypatch.setattr(sys, "platform", "emscripten")
+    monkeypatch.setitem(sys.modules, "ipywidgets", None)
+    graph = plot(sin(x), verbose=False)
+    with pytest.warns(RuntimeWarning, match="showing the regular Plotly graph"):
+        assert graph.range_controls() is graph.plotly
+
+
 def _stdout_of(cell: Any) -> str:
     for output in cell.get("outputs", []):
         if output.get("output_type") == "stream" and output.get("name") == "stdout":

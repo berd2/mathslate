@@ -1,7 +1,7 @@
 # Build-time dependencies.  MathSlate itself is built into a wheel by the
 # deployment workflow and exposed to the Pyodide kernel through Piplite.
 jupyterlite-core[contents]>=0.8,<0.9
-jupyterlite-pyodide-kernel>=0.8,<0.9
+jupyterlite-pyodide-kernel[lock]>=0.8,<0.9
 # Include the browser-side widget manager in the JupyterLite application.
 # The matching Python packages are installed by the bundled playground cell.
 ipywidgets>=8.0,<9

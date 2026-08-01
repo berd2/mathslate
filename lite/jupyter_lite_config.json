@@ -1,0 +1,7 @@
+{
+  "PyodideLockAddon": {
+    "enabled": true,
+    "specs": ["ipywidgets", "anywidget", "nbformat"],
+    "prefetch_extra": ["ipywidgets", "anywidget", "nbformat"]
+  }
+}
