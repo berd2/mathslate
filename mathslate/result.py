@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import math
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -392,6 +393,12 @@ class PlotResult:
         try:
             import ipywidgets as widgets
         except ImportError as error:
+            if sys.platform == "emscripten":
+                raise UnsupportedInputError(
+                    "ipywidgets is not installed in this JupyterLite kernel. Run "
+                    "`import piplite; await piplite.install(['nbformat', "
+                    "'ipywidgets', 'anywidget'])` once, then re-run this cell."
+                ) from error
             raise UnsupportedInputError(
                 "ipywidgets is not installed. `pip install mathslate[jupyter]`."
             ) from error
@@ -402,6 +409,12 @@ class PlotResult:
             # other way, without it.
             figure_widget = go.FigureWidget(self._figure)
         except ImportError as error:
+            if sys.platform == "emscripten":
+                raise UnsupportedInputError(
+                    "this JupyterLite kernel still needs `anywidget`. Run "
+                    "`import piplite; await piplite.install(['nbformat', "
+                    "'ipywidgets', 'anywidget'])` once, then re-run this cell."
+                ) from error
             raise UnsupportedInputError(
                 "this Plotly version's FigureWidget also needs `anywidget`. "
                 "`pip install mathslate[jupyter]` installs both."

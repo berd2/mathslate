@@ -106,5 +106,11 @@ def _range_controls_status(frontend: Frontend) -> str:
         return f"not shown on {frontend.value} — needs a Jupyter or Colab kernel"
     if not _live_range_deps_available():
         missing = "anywidget" if _available("ipywidgets") else "ipywidgets"
+        if sys.platform == "emscripten":
+            return (
+                f"not shown — {missing} is not installed; run "
+                "`import piplite; await piplite.install(['nbformat', "
+                "'ipywidgets', 'anywidget'])` once"
+            )
         return f"not shown — {missing} is not installed (pip install mathslate[jupyter])"
     return "ready"

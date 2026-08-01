@@ -120,6 +120,19 @@ def test_the_frontend_adapter_recognizes_jupyterlite(monkeypatch: pytest.MonkeyP
     assert detect_frontend() is Frontend.JUPYTER
 
 
+def test_jupyterlite_report_gives_a_piplite_install_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A browser kernel cannot follow a desktop ``pip install`` instruction."""
+    from mathslate import result
+    from mathslate.ui import adapters
+
+    monkeypatch.setattr(sys, "platform", "emscripten")
+    monkeypatch.setattr(result, "_live_range_deps_available", lambda: False)
+    monkeypatch.setattr(adapters, "_available", lambda _name: False)
+    assert "await piplite.install" in adapters.frontend_report()
+
+
 def _stdout_of(cell: Any) -> str:
     for output in cell.get("outputs", []):
         if output.get("output_type") == "stream" and output.get("name") == "stdout":
