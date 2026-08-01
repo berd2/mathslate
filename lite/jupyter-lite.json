@@ -6,6 +6,6 @@
   },
   "jupyter-config-data": {
     "appName": "MathSlate Playground",
-    "defaultNotebook": "mathslate_tour.ipynb"
+    "defaultNotebook": "mathslate_playground.ipynb"
   }
 }

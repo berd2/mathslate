@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "A mathematical workspace that grows with you."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "MathSlate contributors" }]
 keywords = ["mathematics", "sympy", "plotly", "education", "plotting"]
 classifiers = [
@@ -21,6 +22,12 @@ classifiers = [
 
 # PRD 6.2 / acceptance criterion 6: no frontend dependency is pulled in.
 dependencies = ["sympy>=1.12", "numpy>=1.24", "plotly>=5.18"]
+
+[project.urls]
+Homepage = "https://github.com/berd2/mathslate"
+Documentation = "https://github.com/berd2/mathslate/blob/master/docs/manual.md"
+Repository = "https://github.com/berd2/mathslate"
+Issues = "https://github.com/berd2/mathslate/issues"
 
 [project.optional-dependencies]
 # anywidget: Plotly >= 6 rebuilt FigureWidget on it, which range_controls()

@@ -9,3 +9,7 @@ dist/
 .mypy_cache/
 .ipynb_checkpoints/
 __marimo__/
+old_doc/
+lite/files/
+lite/wheels/
+_site/

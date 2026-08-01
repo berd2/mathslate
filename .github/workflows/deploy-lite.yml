@@ -21,27 +21,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
       - name: Install JupyterLite Build Tools
         run: |
           python -m pip install --upgrade pip
-          pip install jupyterlite-core jupyterlite-pyodide-kernel
+          python -m pip install -r lite/requirements.txt
 
-      - name: Prepare Starter Notebook
+      - name: Prepare JupyterLite content and MathSlate wheel
         run: |
-          mkdir -p lite/files
+          mkdir -p lite/files lite/wheels
+          python -m build --wheel --outdir lite/wheels
           cp examples/mathslate_tour.ipynb lite/files/
+          cp lite/mathslate_playground.ipynb lite/files/
 
       - name: Build JupyterLite Site
         run: |
           cd lite
-          jupyter lite build --contents files --output-dir ../_site
+          wheel="$(find wheels -maxdepth 1 -name 'mathslate-*.whl' -print -quit)"
+          test -n "$wheel"
+          jupyter lite build --contents files --output-dir ../_site --piplite-wheels "$wheel"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
