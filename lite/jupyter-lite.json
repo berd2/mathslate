@@ -1,0 +1,11 @@
+{
+  "jupyter-lite-schema-version": 0,
+  "defaultConfig": {
+    "appName": "MathSlate Playground",
+    "appUrl": "./lab/index.html"
+  },
+  "jupyter-config-data": {
+    "appName": "MathSlate Playground",
+    "defaultNotebook": "mathslate_tour.ipynb"
+  }
+}

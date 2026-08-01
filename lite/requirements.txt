@@ -1,0 +1,6 @@
+mathslate
+sympy>=1.12
+numpy>=1.24
+plotly>=5.18
+ipywidgets>=8.0
+anywidget>=0.9

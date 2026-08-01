@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mathslate"
+version = "0.1.0"
+description = "A mathematical workspace that grows with you."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "MathSlate contributors" }]
+keywords = ["mathematics", "sympy", "plotly", "education", "plotting"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+# PRD 6.2 / acceptance criterion 6: no frontend dependency is pulled in.
+dependencies = ["sympy>=1.12", "numpy>=1.24", "plotly>=5.18"]
+
+[project.optional-dependencies]
+# anywidget: Plotly >= 6 rebuilt FigureWidget on it, which range_controls()
+# (PRD §19) needs for live resampling — a second package ipywidgets does not
+# pull in on its own. Bundled here so one extra is actually enough.
+jupyter = ["ipywidgets>=8.0", "anywidget>=0.9"]
+marimo = ["marimo>=0.9"]
+# PRD 8: the AI assistant is an extra so the core stays usable on a school or
+# corporate network that blocks it. Pick one; none of them is required.
+ai = ["anthropic>=0.40"]
+ai-openai = ["openai>=1.50"]
+ai-gemini = ["google-genai>=1.0"]
+# `tomli` backports the standard-library `tomllib` (added in 3.11) so the test
+# suite reads pyproject.toml on the 3.10 floor named in `requires-python`.
+dev = ["pytest>=8.0", "tomli>=2.0; python_version < '3.11'"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["mathslate"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
