@@ -12,4 +12,6 @@ __marimo__/
 old_doc/
 lite/files/
 lite/wheels/
-_site/
+_site*/
+lite/.cache/
+lite/.jupyterlite.doit.db
