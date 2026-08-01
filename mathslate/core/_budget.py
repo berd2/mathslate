@@ -23,10 +23,12 @@ follows: exact where SymPy can, approximate where it cannot, and say which.
 
 **Why a thread and not a signal.** `signal.SIGALRM` is Unix-only and only works
 on the main thread, which rules out Jupyter's and marimo's execution threads.
-A worker thread works everywhere. Mathics3 reached the same conclusion for
-`TimeConstrained` and maintains a fork of `stopit` for it; this is the same
-design without the dependency, since the package needs one deadline in one
-place rather than a general nesting-capable framework.
+A worker thread works on ordinary desktop Python runtimes. Mathics3 reached the
+same conclusion for `TimeConstrained` and maintains a fork of `stopit` for it;
+this is the same design without the dependency, since the package needs one
+deadline in one place rather than a general nesting-capable framework. Pyodide
+cannot create Python worker threads, so WebAssembly builds execute these calls
+inline instead of failing to plot.
 
 **Stopping the worker, not just abandoning it.** `Thread` has no `kill`, and
 the naive version of this module simply walked away from an expired attempt.
@@ -60,6 +62,7 @@ unlike a thread, a process can be terminated safely even while native code runs.
 from __future__ import annotations
 
 import ctypes
+import sys
 import threading
 from typing import Any, Callable, Final, TypeVar
 
@@ -154,6 +157,15 @@ def within_budget(
     The result — or the exception the operation raised — is passed through
     untouched, so wrapping a call never changes what a successful call does.
     """
+    if not _worker_threads_available():
+        # Pyodide runs Python in the browser's main WebAssembly thread.  Its
+        # ``threading`` module provides locks and locals, but cannot create a
+        # native worker, so attempting a deadline raises ``RuntimeError: can't
+        # start new thread``.  Keep plotting usable there by running the same
+        # symbolic operation inline.  A browser cannot safely pre-empt that
+        # operation; desktop Python retains the wall-clock budget below.
+        return operation(*args, **kwargs)
+
     if getattr(_WORKER_CONTEXT, "active", False):
         # The outer worker already owns the deadline. Starting another worker
         # would wait on the lock held by the caller that is joining this one.
@@ -163,6 +175,17 @@ def within_budget(
     # caller can never inject a timeout into another caller's valid worker.
     with _CALL_LOCK:
         return _within_budget_serial(operation, *args, seconds=seconds, **kwargs)
+
+
+def _worker_threads_available() -> bool:
+    """Whether this interpreter can create the worker used for a deadline.
+
+    CPython compiled for WebAssembly identifies itself as ``emscripten``.
+    Pyodide deliberately has no Python worker-thread support, even though its
+    ``threading`` module exposes the synchronization primitives used elsewhere
+    in this file.
+    """
+    return sys.platform != "emscripten"
 
 
 def _within_budget_serial(
