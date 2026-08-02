@@ -1,8 +1,10 @@
+# Secondary preview channel — pip install is the primary distribution path
+# (see README "Install"). Builds only on release so this isn't rebuilt (and
+# doesn't drift out of sync) on every push while local install stays the
+# recommended way to run MathSlate.
 name: Deploy JupyterLite to GitHub Pages
 
 on:
-  push:
-    branches: [ main, master ]
   release:
     types: [ published ]
   workflow_dispatch:
@@ -26,8 +28,6 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          # pyodide-lock, used to preload JupyterLite widget packages, requires
-          # Python 3.12+. Keep the deployment builder on that supported floor.
           python-version: '3.12'
 
       - name: Install JupyterLite Build Tools

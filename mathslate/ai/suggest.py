@@ -14,14 +14,19 @@ API small.
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
+import pickle
 import re
+import subprocess
+import sys
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
 from .._text import safe_print
-from ..core._budget import SymbolicTimeout, within_budget
+from ..core._budget import set_budget
 from ..errors import UnsupportedInputError
 from .providers import Backend, resolve_provider
 
@@ -69,11 +74,12 @@ _SAFE_BUILTINS: dict[str, Any] = {
 }
 _MAX_SAFE_CODE_CHARS = 20_000
 _MAX_SAFE_AST_NODES = 400
-#: Wall-clock budget for one restricted execution, via the same mechanism
-#: :mod:`mathslate.core._budget` gives symbolic calls. The AST allowlist bounds
+#: Wall-clock budget for one restricted execution. The AST allowlist bounds
 #: *what* restricted code can name, not what a legal expression costs to run —
 #: ``9**9**9`` is three ``Constant``/``BinOp`` nodes and passes validation, but
-#: computing it exhausts memory. This is the backstop for that gap.
+#: computing it exhausts memory. Restricted code therefore runs in a separate
+#: Python process which can be terminated without injecting an exception into
+#: NumPy, SymPy or Plotly on the caller's thread.
 _RUN_BUDGET: Final[float] = 10.0
 _ALLOWED_AST_NODES: tuple[type[ast.AST], ...] = (
     ast.Module,
@@ -200,11 +206,14 @@ class Suggestion:
         """Execute the visible code after validating it.
 
         The default namespace contains only the documented MathSlate/SymPy
-        names and a minimal builtin set, and runs under a wall-clock budget
-        (see :data:`_RUN_BUDGET`) so a legal-looking but runaway expression
-        cannot hang the caller. Pass ``unsafe=True`` to recover normal Python
-        execution, including imports, filesystem access and no time limit;
-        never use that mode for untrusted model output.
+        names and a minimal builtin set. Restricted code runs in a separate
+        process under a wall-clock budget (see :data:`_RUN_BUDGET`), so a
+        legal-looking but runaway expression cannot hang or corrupt the caller.
+        A supplied namespace is deliberately available only in ``unsafe`` mode:
+        its objects could carry capabilities that an allowed method name could
+        invoke. Pass ``unsafe=True`` to recover normal Python execution,
+        including imports, filesystem access, a supplied namespace and no time
+        limit; never use that mode for untrusted model output.
         """
         scope: dict[str, Any] = namespace if namespace is not None else {}
         if unsafe:
@@ -214,18 +223,26 @@ class Suggestion:
             return scope
 
         self.validate()
-        scope.update(_safe_exports())
-        # Never let a supplied namespace restore unrestricted builtins.
-        scope["__builtins__"] = dict(_SAFE_BUILTINS)
-        compiled = compile(self.code, "<mathslate.ai>", "exec")
-        try:
-            within_budget(exec, compiled, scope, seconds=_RUN_BUDGET)  # noqa: S102
-        except SymbolicTimeout as error:
+        if namespace is not None:
+            # `is not None`, not a truthiness test: an empty dict is still a
+            # caller asking to be given the results in *their* object, and
+            # restricted execution can no longer do that — the names come back
+            # from another process, so nothing is filled in place. Accepting
+            # `{}` silently would leave that caller reading an empty mapping
+            # and finding a KeyError where the answer used to be.
             raise UnsupportedInputError(
-                f"AI suggestion exceeded its {_RUN_BUDGET:g}s execution budget "
-                "and was stopped — it likely does unbounded work such as a huge "
-                "power or a large repetition."
-            ) from error
+                "restricted execution does not accept a namespace because its "
+                "objects may carry capabilities, and its results come back from "
+                "a separate process rather than being written into yours — read "
+                "them from the returned mapping. Use run(namespace, unsafe=True) "
+                "only if you trust both the code and the namespace."
+            )
+
+        assigned, output = _run_restricted(self.code)
+        scope = _safe_scope()
+        scope.update(assigned)
+        if output:
+            safe_print(output, end="")
         return scope
 
     def _repr_html_(self) -> str:
@@ -250,6 +267,103 @@ def _safe_exports() -> dict[str, Any]:
     exports = {name: getattr(mathslate, name) for name in _SAFE_CALLS | constants}
     exports["dataset"] = _safe_dataset
     return exports
+
+
+def _safe_scope() -> dict[str, Any]:
+    """A new restricted global scope, never mixed with caller-owned values."""
+    scope = _safe_exports()
+    scope["__builtins__"] = dict(_SAFE_BUILTINS)
+    return scope
+
+
+def _assigned_names(code: str) -> tuple[str, ...]:
+    """Names whose values need to travel back from the isolated process."""
+    names: list[str] = []
+
+    def add(target: ast.expr) -> None:
+        if isinstance(target, ast.Name):
+            names.append(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for item in target.elts:
+                add(item)
+
+    for statement in ast.parse(code, filename="<mathslate.ai>", mode="exec").body:
+        if isinstance(statement, ast.Assign):
+            for target in statement.targets:
+                add(target)
+    return tuple(dict.fromkeys(names))
+
+
+def _run_restricted(code: str) -> tuple[dict[str, Any], str]:
+    """Run validated code out-of-process and return its assigned values/output."""
+    request = pickle.dumps((code, _assigned_names(code)))
+    command = (
+        "from mathslate.ai.suggest import _restricted_process_entry as run; "
+        "import sys; sys.stdout.buffer.write(run(sys.stdin.buffer.read()))"
+    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", command],
+            input=request,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=_RUN_BUDGET,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise UnsupportedInputError(
+            f"AI suggestion exceeded its {_RUN_BUDGET:g}s execution budget and "
+            "was stopped in an isolated process."
+        ) from error
+    except (OSError, ValueError) as error:
+        # Not every host can start a process at all — Pyodide/JupyterLite has
+        # no `fork`, and a locked-down container may refuse. That is a fact
+        # about the environment, not about the suggestion, so say so instead
+        # of letting a raw OSError out of a method whose contract is
+        # `UnsupportedInputError`.
+        raise UnsupportedInputError(
+            "restricted execution needs to start a separate Python process, "
+            f"which this environment does not allow ({error}). Read the code "
+            "and use run(unsafe=True) if you trust it."
+        ) from error
+
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", "replace").strip()
+        raise UnsupportedInputError(
+            "restricted AI execution failed in its isolated process"
+            + (f": {detail}" if detail else ".")
+        )
+    try:
+        status, payload = pickle.loads(completed.stdout)
+    except (EOFError, pickle.UnpicklingError, ValueError, TypeError) as error:
+        raise UnsupportedInputError(
+            "restricted AI execution returned an unreadable result."
+        ) from error
+    if status == "error":
+        raise UnsupportedInputError(f"AI suggestion failed: {payload}")
+    return payload
+
+
+def _restricted_process_entry(request: bytes) -> bytes:
+    """Subprocess entry point. Kept importable so it needs no notebook state."""
+    try:
+        code, assigned_names = pickle.loads(request)
+        # The parent owns the only deadline for this process. Starting the
+        # thread-based symbolic budget here would reintroduce async exception
+        # injection into its native dependencies, while this process can be
+        # terminated safely as a whole.
+        set_budget(None)
+        scope = _safe_scope()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            exec(compile(code, "<mathslate.ai>", "exec"), scope)  # noqa: S102
+        assigned = {name: scope[name] for name in assigned_names if name in scope}
+        response: tuple[str, Any] = ("ok", (assigned, output.getvalue()))
+        # Serialize before returning so unpicklable results become a useful
+        # restricted-execution error rather than a broken pipe.
+        return pickle.dumps(response)
+    except BaseException as error:  # noqa: BLE001 - crosses a process boundary
+        return pickle.dumps(("error", f"{type(error).__name__}: {error}"))
 
 
 def _safe_dataset(

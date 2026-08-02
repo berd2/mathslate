@@ -258,3 +258,10 @@ class TestNativeWidgets:
         """Which is exactly why it is the default rather than the fallback."""
         a = slider(0, 1, name="nofrontend")
         assert plot(a * sin(x), verbose=False).plotly.layout.sliders
+
+    def test_an_ipywidget_updates_its_slider_binding(self) -> None:
+        a = slider(0, 10, default=1, name="widget_binding")
+        widget = a._ipywidget()
+        widget.value = 7
+        assert a.value == 7
+        assert binding.bound_parameters()[a.symbol] == 7

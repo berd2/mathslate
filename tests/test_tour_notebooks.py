@@ -139,11 +139,19 @@ class TestItActuallyRuns:
         assert failures == [], "the tour does not run:\n" + "\n".join(failures)
 
     def test_it_produced_figures(self, executed: Any) -> None:
+        # Two mime types, because §19.4 made `range_controls()` the default
+        # display: wherever ipywidgets is installed a plot arrives as a widget
+        # view rather than as raw Plotly JSON. Counting only the latter said
+        # "8 plots rendered" for a notebook that had in fact drawn 32.
+        figure_mimes = (
+            "application/vnd.plotly.v1+json",
+            "application/vnd.jupyter.widget-view+json",
+        )
         rendered = sum(
             1
             for cell in executed.cells
             for output in cell.get("outputs", [])
-            if "application/vnd.plotly.v1+json" in output.get("data", {})
+            if any(mime in output.get("data", {}) for mime in figure_mimes)
         )
         assert rendered >= 15, f"only {rendered} plots rendered"
 

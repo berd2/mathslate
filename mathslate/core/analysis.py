@@ -28,7 +28,7 @@ from __future__ import annotations
 import threading
 import warnings
 from dataclasses import dataclass, field
-from typing import Callable, Final, Sequence
+from typing import Callable, Final, Iterable, Iterator, Sequence
 
 import numpy as np
 import sympy as sp
@@ -174,7 +174,7 @@ class Points:
     def __len__(self) -> int:
         return len(self.values)
 
-    def __iter__(self):  # type: ignore[no-untyped-def]
+    def __iter__(self) -> Iterator[float]:
         return iter(self.values)
 
     def __getitem__(self, index: int) -> float:
@@ -1266,7 +1266,7 @@ def _interval(span: tuple[float, float]) -> str:
     return f"({_number(span[0])}, {_number(span[1])})"
 
 
-def _join(parts) -> str:  # type: ignore[no-untyped-def]
+def _join(parts: Iterable[str]) -> str:
     listed = ", ".join(parts)
     return listed or "none"
 

@@ -26,8 +26,9 @@ import plotly.graph_objects as go
 import pytest
 import sympy as sp
 
-from mathslate import cos, exp, plot, sin, t, tan, theta, x, y, z
+from mathslate import cos, exp, plot, sin, slider, t, tan, theta, x, y, z
 from mathslate.errors import UnsupportedInputError
+from mathslate.ui import release_all
 
 SADDLE = x * y
 POLE_SURFACE = 1 / (x * y)
@@ -56,8 +57,45 @@ def _unwrap(bundle: Any) -> tuple[Any, Any]:
 
 
 def _number_controls(controls: Any) -> tuple[Any, ...]:
-    """FloatText fields, excluding the styling widget and action rows."""
-    return tuple(child for child in controls.children if child.__class__.__name__ == "FloatText")
+    """FloatText fields, including the compact two-column range grid."""
+    found: list[Any] = []
+
+    def visit(widget: Any) -> None:
+        if widget.__class__.__name__ == "FloatText":
+            found.append(widget)
+        for child in getattr(widget, "children", ()):
+            visit(child)
+
+    visit(controls)
+    return tuple(found)
+
+
+def _buttons(controls: Any) -> dict[str, Any]:
+    """Every Button in a nested controller layout, keyed by its caption."""
+    found: dict[str, Any] = {}
+
+    def visit(widget: Any) -> None:
+        if widget.__class__.__name__ == "Button":
+            found[widget.description] = widget
+        for child in getattr(widget, "children", ()):
+            visit(child)
+
+    visit(controls)
+    return found
+
+
+def _widgets(controls: Any, class_name: str) -> tuple[Any, ...]:
+    """Widgets of one class anywhere inside the compact controller."""
+    found: list[Any] = []
+
+    def visit(widget: Any) -> None:
+        if widget.__class__.__name__ == class_name:
+            found.append(widget)
+        for child in getattr(widget, "children", ()):
+            visit(child)
+
+    visit(controls)
+    return tuple(found)
 
 
 class TestSurfaceMesh:
@@ -415,6 +453,120 @@ class TestLiveRangeResamplingWidget:
             result._replotted(x_range=(float("nan"), 1.0))
 
 
+class TestAutoYFitsTheCurrentXDomain:
+    """Auto Y must answer "what Y does this X window reach", on any curve.
+
+    The auto-*clip* (`plan.y_range`) is deliberately unset wherever a curve is
+    well behaved enough not to need clipping, so reading it alone answered
+    "nothing" for `x**2`, `sin(x)` and most of the corpus.
+    """
+
+    @pytest.fixture
+    def _colab(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stub = types.ModuleType("google.colab")
+        monkeypatch.setitem(sys.modules, "google.colab", stub)
+
+    @staticmethod
+    def _buttons(controls: Any) -> dict[str, Any]:
+        return _buttons(controls)
+
+    def test_a_curve_with_no_clip_still_gets_a_fitted_window(
+        self, _colab: None
+    ) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        result = plot(x**2, (x, -10, 10), verbose=False)
+        assert result.plan.y_range is None  # the precondition: nothing to clip
+        figure_widget, controls = _unwrap(result.range_controls())
+        x_min, x_max, y_min, y_max = _number_controls(controls)
+
+        x_min.value, x_max.value = 0.0, 2.0
+        self._buttons(controls)["Fit Y"].click()
+
+        assert (y_min.value, y_max.value) == pytest.approx((0.0, 4.0), abs=0.05)
+        assert tuple(figure_widget.layout.yaxis.range) == pytest.approx(
+            (y_min.value, y_max.value)
+        )
+
+    def test_the_boxes_start_at_the_window_actually_drawn(self, _colab: None) -> None:
+        """They are pushed back as `ylim` on the next edit, so a placeholder
+        unrelated to the plot does not just look wrong — it crops it."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        result = plot(x**2, (x, -10, 10), verbose=False)
+        figure_widget, controls = _unwrap(result.range_controls())
+        x_min, x_max, y_min, y_max = _number_controls(controls)
+        assert (y_min.value, y_max.value) == pytest.approx((0.0, 100.0), abs=0.5)
+
+        # The crop is a *view*, so the samples are no evidence either way —
+        # `data[0].y` still reaches 100 with the axis pinned to -1..1.
+        x_min.value = -5.0
+        assert tuple(figure_widget.layout.yaxis.range) == pytest.approx(
+            (y_min.value, y_max.value)
+        )
+        assert figure_widget.layout.yaxis.range[1] > 20.0
+
+    def test_a_pole_still_keeps_its_clip_rather_than_the_raw_extent(
+        self, _colab: None
+    ) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        result = plot(tan(x), (x, -10, 10), verbose=False)
+        clip = result.plan.y_range
+        assert clip is not None  # the precondition: a clip is active
+        _, controls = _unwrap(result.range_controls())
+        _, _, y_min, y_max = _number_controls(controls)
+
+        y_min.value, y_max.value = -500.0, 500.0
+        self._buttons(controls)["Fit Y"].click()
+        assert (y_min.value, y_max.value) == pytest.approx(clip)
+
+    def test_auto_y_escapes_an_explicit_ylim(self, _colab: None) -> None:
+        """`ylim` is the window the reader asked for; Auto Y is them asking
+        for a different one, so it must clear it rather than fit to it."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        result = plot(x**2, (x, -10, 10), ylim=(-1.0, 1.0), verbose=False)
+        _, controls = _unwrap(result.range_controls())
+        _, _, y_min, y_max = _number_controls(controls)
+        assert (y_min.value, y_max.value) == (-1.0, 1.0)
+
+        self._buttons(controls)["Fit Y"].click()
+        assert y_max.value == pytest.approx(100.0, abs=0.5)
+
+    def test_on_a_log_axis_the_boxes_speak_powers_of_ten(self, _colab: None) -> None:
+        """Plotly reads a log axis's range as exponents, and `ylim` already
+        follows that there — so seeding the boxes with raw sample values would
+        ask for a window of 10**22026 the moment anything else was edited."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        result = plot(exp(x), (x, -10, 10), yscale="log", verbose=False)
+        assert result.plotly.layout.yaxis.type == "log"  # the precondition
+        figure_widget, controls = _unwrap(result.range_controls())
+        x_min, x_max, y_min, y_max = _number_controls(controls)
+
+        # exp(-10) .. exp(10) is 1e-4.34 .. 1e4.34, not 4.5e-05 .. 22026.
+        assert (y_min.value, y_max.value) == pytest.approx((-4.343, 4.343), abs=0.01)
+
+        x_min.value, x_max.value = 0.0, 2.0
+        self._buttons(controls)["Fit Y"].click()
+        assert (y_min.value, y_max.value) == pytest.approx((0.0, 0.869), abs=0.01)
+        assert tuple(figure_widget.layout.yaxis.range) == pytest.approx(
+            (y_min.value, y_max.value)
+        )
+
+    def test_auto_z_escapes_an_explicit_zlim(self, _colab: None) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        result = plot(x**2 - y**2, (x, -5, 5), (y, -5, 5), zlim=(-1.0, 1.0), verbose=False)
+        _, controls = _unwrap(result.range_controls())
+        *_, z_min, z_max = _number_controls(controls)
+        assert (z_min.value, z_max.value) == (-1.0, 1.0)
+
+        self._buttons(controls)["Fit Z"].click()
+        assert z_max.value == pytest.approx(25.0, abs=0.5)
+
+
 class TestRangeControlsOnA3DSurface:
     """PRD §23.2 — a real 3D surface also gets z min/max, view-only."""
 
@@ -504,46 +656,40 @@ class TestRangeControlsOnA3DSurface:
     def test_z_range_buttons_zoom_the_surface_view(self, _colab: None) -> None:
         pytest.importorskip("ipywidgets")
         pytest.importorskip("anywidget")
-        import ipywidgets as widgets
-
         result = plot(SADDLE, verbose=False)
         figure_widget, controls = _unwrap(result.range_controls())
         *_, z_min, z_max = _number_controls(controls)
-        buttons = {
-            button.description: button
-            for row in controls.children
-            if isinstance(row, widgets.HBox)
-            for button in row.children
-        }
-        assert "Auto Z" in buttons
-        assert "Auto Y" not in buttons
+        buttons = _buttons(controls)
+        action_rows = [
+            row for row in _widgets(controls, "HBox")
+            if row.children and all(child.__class__.__name__ == "Button" for child in row.children)
+        ]
+        assert "Fit Z" in buttons
+        assert "Fit Y" not in buttons
+        assert [len(row.children) for row in action_rows] == [4, 4]
+        assert [button.description for row in action_rows for button in row.children] == [
+            "Fit Z", "[X]+", "[Y]+", "[Z]+", "Reset", "[X]−", "[Y]−", "[Z]−",
+        ]
         before = z_max.value - z_min.value
-        buttons["Z in"].click()
+        buttons["[Z]−"].click()
         assert z_max.value - z_min.value == pytest.approx(before / 2)
         assert tuple(figure_widget.layout.scene.zaxis.range) == pytest.approx(
             (z_min.value, z_max.value)
         )
 
         z_min.value, z_max.value = -999.0, 999.0
-        buttons["Auto Z"].click()
+        buttons["Fit Z"].click()
         assert tuple(figure_widget.layout.scene.zaxis.range) != (-999.0, 999.0)
 
     def test_a_space_curve_gets_parameter_and_z_controls(self, _colab: None) -> None:
         pytest.importorskip("ipywidgets")
         pytest.importorskip("anywidget")
-        import ipywidgets as widgets
-
         result = plot((cos(t), sin(t), t), (t, 0, 12), verbose=False)
         figure_widget, controls = _unwrap(result.range_controls())
         t_min, t_max, _, _, z_min, z_max = _number_controls(controls)
-        assert (t_min.description, t_max.description) == ("t min", "t max")
-        buttons = {
-            button.description: button
-            for row in controls.children
-            if isinstance(row, widgets.HBox)
-            for button in row.children
-        }
-        assert {"t in", "t out", "Auto Z", "Z in", "Z out"} <= set(buttons)
+        assert (t_min.description, t_max.description) == ("", "")
+        buttons = _buttons(controls)
+        assert {"[t]+", "[t]−", "Fit Z", "[Z]+", "[Z]−"} <= set(buttons)
 
         z_min.value, z_max.value = 1.0, 3.0
         assert tuple(figure_widget.layout.scene.zaxis.range) == (1.0, 3.0)
@@ -552,8 +698,6 @@ class TestRangeControlsOnA3DSurface:
         """Auto Z must not redraw a wide space curve through a -1..1 Y window."""
         pytest.importorskip("ipywidgets")
         pytest.importorskip("anywidget")
-        import ipywidgets as widgets
-
         result = plot(
             (
                 cos(t) * (3 + cos(5 * t)),
@@ -571,13 +715,8 @@ class TestRangeControlsOnA3DSurface:
         )
 
         z_min.value, z_max.value = -20.0, 20.0
-        buttons = {
-            button.description: button
-            for row in controls.children
-            if isinstance(row, widgets.HBox)
-            for button in row.children
-        }
-        buttons["Auto Z"].click()
+        buttons = _buttons(controls)
+        buttons["Fit Z"].click()
 
         assert (z_min.value, z_max.value) == pytest.approx(
             (float(sample.z.min()), float(sample.z.max()))
@@ -585,6 +724,86 @@ class TestRangeControlsOnA3DSurface:
         assert tuple(figure_widget.layout.scene.yaxis.range) == pytest.approx(
             (float(sample.y.min()), float(sample.y.max()))
         )
+
+
+class TestRangeControlsDisplayController:
+    @pytest.fixture
+    def _colab(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stub = types.ModuleType("google.colab")
+        monkeypatch.setitem(sys.modules, "google.colab", stub)
+
+    def test_a_positive_2d_curve_gets_scale_and_mode_switches(self, _colab: None) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        import ipywidgets as widgets
+
+        figure_widget, controls = _unwrap(plot(exp(x), verbose=False).range_controls())
+        switches = _widgets(controls, "ToggleButtons")
+        scale_switch, = switches
+        trace_switch = next(
+            switch for switch in _widgets(controls, "ToggleButton")
+            if switch.description == "Points"
+        )
+        thickness, = _widgets(controls, "IntSlider")
+        rows = [
+            row for row in _widgets(controls, "HBox")
+            if len(row.children) == 2 and isinstance(row.children[0], widgets.Label)
+        ]
+        action_rows = [
+            row for row in _widgets(controls, "HBox")
+            if row.children and all(child.__class__.__name__ == "Button" for child in row.children)
+        ]
+
+        assert scale_switch.description == ""
+        assert [row.children[0].value for row in rows] == ["Scale", "Mode"]
+        assert [len(row.children) for row in action_rows] == [3, 3]
+        assert [button.description for row in action_rows for button in row.children] == [
+            "Fit Y", "[X]+", "[Y]+", "Reset", "[X]−", "[Y]−",
+        ]
+        scale_switch.value = "log"
+        trace_switch.value = True
+
+        assert figure_widget.layout.yaxis.type == "log"
+        assert figure_widget.data[0].mode == "markers"
+        thickness.value = 150
+        assert figure_widget.data[0].line.width == pytest.approx(3.0)
+        assert figure_widget.data[0].marker.size == pytest.approx(9.0)
+
+    def test_a_2d_controller_keeps_display_choices_after_resampling(
+        self, _colab: None
+    ) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        figure_widget, controls = _unwrap(plot(exp(x), verbose=False).range_controls())
+        switches = _widgets(controls, "ToggleButtons")
+        switches[0].value = "log"
+        next(
+            switch for switch in _widgets(controls, "ToggleButton")
+            if switch.description == "Points"
+        ).value = True
+        x_min, x_max, _, _ = _number_controls(controls)
+        x_min.value, x_max.value = -2, 2
+
+        assert figure_widget.layout.yaxis.type == "log"
+        assert figure_widget.data[0].mode == "markers"
+
+    def test_surface_gets_z_scale_and_mesh_controls_only(self, _colab: None) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        figure_widget, controls = _unwrap(plot(exp(x + y), verbose=False).range_controls())
+        z_scale_switch, = _widgets(controls, "ToggleButtons")
+        mesh_switch = next(
+            switch for switch in _widgets(controls, "ToggleButton")
+            if switch.description == "Off"
+        )
+        density, = _widgets(controls, "IntSlider")
+
+        assert z_scale_switch.description == ""
+        assert mesh_switch.value is False
+        z_scale_switch.value = "log"
+        mesh_switch.value = True
+        assert figure_widget.layout.scene.zaxis.type == "log"
+        assert density.disabled is True
 
 
 class TestRangeControlsLayoutAndSize:
@@ -716,42 +935,29 @@ class TestRangeControlsLayoutAndSize:
         _, controls = _unwrap(result.range_controls())
         floor = int(_RANGE_CONTROLS_MIN_SIDEBAR_WIDTH.removesuffix("px"))
         for box in _number_controls(controls):
-            assert box.layout.width == "calc(100% - 8px)", (
-                f"{box.description!r}'s box does not track the sidebar's own width"
-            )
-            label_width = int(str(box.style.description_width).removesuffix("px"))
-            assert floor - label_width >= 80, (
-                f"only {floor - label_width}px would be left for the number "
-                f"in {box.description!r}'s box even at the sidebar's floor "
-                f"width — too little to read"
-            )
+            assert box.layout.width == "calc(50% - 12px)"
+            assert box.style.description_width == "0px"
+            assert floor / 2 - 12 >= 80
 
     def test_sidebar_actions_zoom_autoscale_and_reset(self, _colab: None) -> None:
         """The sidebar is also a compact axis toolbar, not inputs only."""
         pytest.importorskip("ipywidgets")
         pytest.importorskip("anywidget")
-        import ipywidgets as widgets
-
         result = plot(sin(x) / x, (x, -10, 10), verbose=False)
         figure_widget, controls = _unwrap(result.range_controls())
         x_min, x_max, y_min, y_max = _number_controls(controls)
-        rows = [child for child in controls.children if isinstance(child, widgets.HBox)]
-        buttons = {
-            button.description: button
-            for row in rows
-            for button in row.children
-        }
-        assert set(buttons) == {"Auto Y", "Reset", "X in", "X out", "Y in", "Y out"}
+        buttons = _buttons(controls)
+        assert set(buttons) == {"Fit Y", "Reset", "[X]+", "[X]−", "[Y]+", "[Y]−"}
 
         x_span = x_max.value - x_min.value
         y_span = y_max.value - y_min.value
-        buttons["X in"].click()
-        buttons["Y out"].click()
+        buttons["[X]−"].click()
+        buttons["[Y]+"].click()
         assert x_max.value - x_min.value == pytest.approx(x_span / 2)
         assert y_max.value - y_min.value == pytest.approx(y_span * 2)
 
         y_min.value, y_max.value = -10.0, 10.0
-        buttons["Auto Y"].click()
+        buttons["Fit Y"].click()
         assert tuple(figure_widget.layout.yaxis.range) != (-10.0, 10.0)
 
         buttons["Reset"].click()
@@ -868,6 +1074,39 @@ class TestRangeControlsAreTheDefaultDisplay:
         pytest.importorskip("anywidget")
         raw = plot([1.0, 2.0, 2.0, 3.0] * 5, kind="hist", verbose=False)
         raw._ipython_display_()  # must show the plain figure, not raise
+
+    def test_a_slider_driven_plot_is_shown_as_its_figure(
+        self, _colab: None, _shell: Any
+    ) -> None:
+        """`go.FigureWidget` rejects frames, and a slider's positions *are*
+        frames (§11) — so routing one into range_controls() turned merely
+        evaluating `plot(a*sin(x))` in a cell into Plotly's raw ValueError.
+        Both tour cells of the interactive section died this way."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        amplitude = slider(-3, 3, default=1, name="review_amp")
+        try:
+            result = plot(amplitude * sin(x), verbose=False)
+            assert result.interactive is True  # the precondition: it has frames
+            assert result._wants_live_range_controls() is False
+            result._ipython_display_()  # must show the figure, not raise
+        finally:
+            release_all()
+
+    def test_range_controls_on_a_slider_plot_explains_itself(
+        self, _colab: None
+    ) -> None:
+        """Asked for by name it must still refuse in MathSlate's own words,
+        not leak `ValueError: Figure Widgets do not support frames`."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        amplitude = slider(-3, 3, default=1, name="review_amp2")
+        try:
+            result = plot(amplitude * sin(x), verbose=False)
+            with pytest.raises(UnsupportedInputError, match="frames"):
+                result.range_controls()
+        finally:
+            release_all()
 
     def test_marimo_is_unaffected_because_it_never_looks_for_the_hook(
         self, monkeypatch: pytest.MonkeyPatch, _shell: Any

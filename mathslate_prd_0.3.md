@@ -2150,3 +2150,208 @@ a traitlets `Dict` trait notice a change and sync it to the frontend) —
 only in the unset-size case, since `responsive` resizes the chart to its
 container regardless of `layout.width`/`height`, which would silently
 override an explicit `width=`/`height=` request otherwise.
+
+### 23.6 `Auto Y` was reading the clip, not the curve
+
+Reported as "the values it computes do not look right". They were not being
+computed at all on most plots. `_autoscale_y` read `plan.y_range` and
+returned when it was `None` — but `plan.y_range` is the *auto-clip*
+(§16.5), and `_clip_range` deliberately returns `None` wherever a curve is
+well behaved enough not to need clipping. So the button was dead on
+`sin(x)`, `x**2` and most of the 200-function corpus, and alive only on the
+poles — exactly backwards from where fitting Y is easy. `Auto Z` had had the
+right shape since §23.2: ask `options` for the rendered window, then fall
+back to measuring the data. `Auto Y` now makes the same two-step call
+through a shared `_data_span`, and three consequences of the same root
+confusion went with it:
+
+- **The seed values.** The boxes started at `plan.y_range or (-1.0, 1.0)`,
+  so `plot(x**2, (x, -10, 10))` drew 0..100 while its boxes read -1..1. They
+  are not decorative: `_redraw` pushes them back as `ylim` on the next edit,
+  so touching X cropped the plot to a window the reader never chose.
+- **`ylim` could not be escaped.** `_replotted(y_range=None)` means "leave
+  this axis alone", which is a different request from "clear it", and only
+  the first was expressible. Auto Y on a plot built with `ylim=` fitted
+  itself to the very window it was being asked to leave. `auto_y`/`auto_z`
+  flags now say the second thing.
+- **The stale axis range.** A fitted window is *absent* from the fresh
+  figure's layout, and `Layout.update` leaves what it does not mention
+  alone, so the previous hand-typed range survived the redraw and the boxes
+  disagreed with the plot. §23.2 had already hit this for Z and written the
+  range on explicitly; Y needed the same, to `layout.yaxis` or
+  `layout.scene.yaxis` depending on the kind.
+
+One pre-existing bug surfaced while fixing these: on `yscale="log"` Plotly
+reads an axis range as powers of ten, and `RenderOptions.y_range` already
+honours that for `ylim`, but the boxes were seeded from raw sample values.
+`plot(exp(x), yscale="log")` would have asked for a window up to 10**22026
+on the first edit. `_fit_window` converts before measuring, over the
+positive samples a log axis can show at all.
+
+No new symbols, no new parameters — `_data_span`, `_fit_window` and the two
+flags are private. `tests/test_view_and_mesh.py` gained
+`TestAutoYFitsTheCurrentXDomain`: a clipless curve fitting at all, the seeds
+matching what is drawn, a pole keeping its clip in preference to the raw
+extent, `ylim`/`zlim` escape, and the log-axis units.
+
+## 24. A project-wide review, and the bug the ignored test was holding
+
+Four tests had been failing for long enough to be treated as scenery, and
+`--ignore=tests/test_tour_notebooks.py` in CI meant two of them never ran
+there at all. Between them they were hiding one user-facing crash and three
+defects in the suite's own honesty.
+
+### 24.1 A slider-driven plot raised on display, in every notebook
+
+`plot(a*sin(x))` at a cell's end raised `ValueError: Figure Widgets do not
+support frames` — not in some corner, but in Jupyter, for the whole of §11's
+interactive feature. §19.4 made `range_controls()` the default display and
+routed everything resamplable into `go.FigureWidget`, and a slider's
+positions are pre-rendered *frames* carried inside the figure, which is
+precisely what `FigureWidget` refuses to accept. The two features want
+opposite things from the figure: frames are what let a slider survive
+`to_html()` with no kernel (§11), and resampling would have to rebuild every
+frame on each keystroke.
+
+`_wants_live_range_controls()` now excludes an interactive result, so the
+default display falls back to the plain figure — which is the right answer,
+since the slider's control is already inside it. Asked for by name,
+`range_controls()` raises a `MathSlateError` explaining the conflict rather
+than letting Plotly's own `ValueError` out. The `except ImportError` around
+the `FigureWidget` construction had always been too narrow; the fix is to
+not reach it, not to widen the catch.
+
+### 24.2 The test that would have caught it was excluded from CI
+
+`tests/test_tour_notebooks.py` is the only place the Jupyter tour runs in a
+real kernel, and it is the only thing in the suite that exercises
+`_ipython_display_` end to end. CI ignored the whole file to keep the
+*marimo* tour's expensive export and generator-synchronisation checks from
+failing the library build — a sound decision applied with too broad a
+brush. The three marimo classes are deselected by name now, and
+`TestItActuallyRuns` runs with everything else.
+
+Its second assertion was stale on top of that: it counted
+`application/vnd.plotly.v1+json` outputs and demanded fifteen, but §19.4
+means a plot arrives as a widget view wherever ipywidgets is installed. It
+reported "only 8 plots rendered" for a notebook that had drawn 32. Both
+mime types count now.
+
+### 24.3 Two tests were reading the developer's machine, not the code
+
+- `test_no_ai_package_is_a_runtime_dependency` read `pyproject.toml` with
+  `read_text()` and no encoding, so it decoded with the *locale* codec and
+  died on any machine whose default is not UTF-8 (cp949, cp1252) as soon as
+  that file grew a non-ASCII character. The library itself was already
+  clean — every `read_text`/`write_text` in `mathslate/` passes
+  `encoding=`; only the test had the hole.
+- `test_it_says_exactly_what_is_missing` called `ask()` and asserted on the
+  refusal, without forcing the state it was describing. Where an SDK
+  happened to be installed the message correctly named the missing *key*
+  rather than the package, and the assertion failed. Worse, on a machine
+  with a real key in the environment nothing would have raised at all:
+  `ask()` would have reached `backend.complete()` and billed a live request
+  to whoever ran the tests. Both halves are monkeypatched now.
+
+### 24.4 The annotations were invisible to everyone but us
+
+422 of 424 functions were fully annotated, and no consumer could see one of
+them: without a `py.typed` marker (PEP 561) mypy and pyright treat the whole
+package as untyped and silently degrade every imported name to `Any`. The
+marker is added, the wheel is confirmed to carry it, and
+`tests/test_api_surface.py` now pins both halves — the file ships, and
+nothing unannotated ships with it. The two stragglers (`Points.__iter__`,
+`_join`) lost their `type: ignore` comments and gained real types.
+
+### 24.5 What the review did not find
+
+Recorded because a review that only lists faults says nothing about
+coverage. The AST allowlist in `mathslate/ai/suggest.py` holds up: node
+types, attributes, calls and builtins are all allowlisted rather than
+denied, `__builtins__` is overwritten *after* a caller-supplied namespace is
+merged so it cannot be restored, `dataset()` is swapped for a path-refusing
+shim, and a wall-clock budget backstops expressions that are cheap to parse
+and ruinous to evaluate. Every string that reaches HTML — worksheets,
+tables, datasets, analyses, suggestions — goes through `html.escape` at the
+interpolation site. No bare `except`, no mutable default arguments, no
+unencoded file I/O in the package.
+
+## 25. Restricted execution moved out of process — review of the change
+
+`Suggestion.run()` no longer execs validated code on the caller's thread. It
+pickles the source to a child interpreter, runs it there under a
+`subprocess` timeout, and pickles the assigned names back. This is the right
+direction: the previous wall-clock guard was `within_budget`, which enforces
+a deadline by injecting an asynchronous exception into a thread that is
+inside NumPy, SymPy or Plotly C code — safe for pure-Python SymPy loops,
+which is what it was built for, and not something to rely on for code a
+model wrote. A process can simply be killed.
+
+Verified while reviewing: `print()` (an allowed builtin) is captured and
+replayed rather than corrupting the pickle stream; importing the package in
+the child writes nothing to stdout, so the stream stays clean; `set_budget
+(None)` in the child cannot reach the parent's module state; `Dataset`
+needed the new `__reduce__` because `MappingProxyType` will not pickle; and
+a refusal raised inside the child (`dataset('secrets.csv')`) still arrives
+as an `UnsupportedInputError`. Process startup costs about 1.4s of the 10s
+budget, which leaves the documented headroom intact.
+
+Three defects found and fixed:
+
+- **`if namespace:` should have been `is not None`.** A non-empty namespace
+  was correctly refused, but `run({})` fell through the truthiness test and
+  was silently ignored — and, since results now come back from another
+  process, the caller's dict was no longer filled in place either. Code
+  doing `ns = {}; s.run(ns); ns["y"]` went from working to `KeyError` with
+  nothing said. An empty dict is still a caller asking to be given results
+  in their object, so it is refused with the same message.
+- **A host that cannot fork leaked a raw `OSError`.** Only
+  `TimeoutExpired` was caught. Pyodide/JupyterLite has no process creation
+  and a hardened container may refuse it, so a method whose contract is
+  `UnsupportedInputError` could raise something else entirely.
+- **The timeout test had become a tautology.** It monkeypatched
+  `_run_restricted` to raise `UnsupportedInputError("execution budget")` and
+  then asserted `UnsupportedInputError` matching "execution budget" — it
+  would have passed against a `run()` with no budget at all. The original
+  had a real reason to test at the mechanism boundary (a live `9**9**9`
+  would leave a memory-hungry thread loose in the session); process
+  isolation removes that reason, because the bomb is confined to a child
+  that gets killed. It now runs the real expression under a shortened
+  budget.
+
+### 25.1 The escape hatches did not survive the boundary
+
+A `PlotResult` that crossed it was not the object it had been. Plotly's own
+`__reduce__` goes through `to_dict()`, and Plotly 6 encodes numeric arrays
+there into the `{"dtype", "bdata"}` typed-array spec plotly.js reads off the
+wire, so `result.plotly.data[0].x` came back a `dict` where in-process it is
+an `ndarray` — `np.asarray` on it raises `TypeError`. The figure still
+rendered and `to_html()` still worked, and `.numpy` was never affected
+because it reads the plan rather than the figure, so this was easy to miss;
+but PRD 4 makes escape-hatch completeness a success metric, and "the Plotly
+Figure — yours to mutate" has to mean the same thing on both sides. Nothing
+pickled a result until §25 moved restricted execution out of process, so
+this was newly *reachable* rather than newly broken.
+
+`PlotResult.__reduce__` now decodes those specs back to arrays and rebuilds
+the figure from the decoded dict. The alternative — regenerating it from
+`plan` and `options` via `figure_from_plan` — was rejected on the same
+promise it was meant to keep: it would silently discard whatever the caller
+had done to `.plotly` in order to fix how the figure travels. Decoding keeps
+the mutation and reverses only the transport encoding.
+
+Keying on `dtype`/`bdata`/`shape` is safe because that spec is plotly.js's
+wire format rather than an implementation detail of one release, and the
+short codes (`f8`, `i4`, …) are NumPy's own, so no translation table is
+needed. `frombuffer` gives a read-only view of the decoded bytes, so the
+array is copied — in-process trace data is writable, and a clone that is not
+would be a second, quieter version of the same defect.
+
+Checked across every kind the library draws — curve, discontinuous (the NaN
+breaks compare equal), overlaid, parametric, polar, surface with its 2-D
+`shape` key, contour, implicit, space curve, raw data, matrix, and a
+21-frame slider figure — plus a caller-applied `update_layout` and the
+`.sympy`/`.numpy`/`.plan`/`.python()` hatches on the clone.
+`tests/test_api_surface.py::TestTheEscapeHatchesSurvivePickling` pins it;
+two of its five fail against the unfixed code and the other three guard the
+parts that were already right.

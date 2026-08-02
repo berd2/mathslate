@@ -1,4 +1,4 @@
-# Build-time dependencies.  MathSlate itself is built into a wheel by the
+# Build-time dependencies. MathSlate itself is built into a wheel by the
 # deployment workflow and exposed to the Pyodide kernel through Piplite.
 jupyterlite-core[contents]>=0.8,<0.9
 jupyterlite-pyodide-kernel[lock]>=0.8,<0.9

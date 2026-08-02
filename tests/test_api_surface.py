@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import plotly.graph_objects as go
 import pytest
 import sympy as sp
 
 import mathslate as ms
-from mathslate import cos, plot, sin, x
+from mathslate import cos, plot, sin, x, y
 from mathslate.ui import Frontend, detect_frontend
 
 
@@ -87,6 +89,69 @@ class TestEscapeHatches:
     def test_the_result_renders_like_the_figure_it_wraps(self) -> None:
         result = plot(sin(x), verbose=False)
         assert result._repr_mimebundle_() == result.plotly._repr_mimebundle_()
+
+
+class TestTheEscapeHatchesSurvivePickling:
+    """PRD §25.1 — a result that crossed a process boundary is still a result.
+
+    Plotly's own ``__reduce__`` runs the figure through ``to_dict()``, which
+    encodes numeric arrays into the ``{"dtype", "bdata"}`` spec plotly.js
+    reads. A figure rebuilt from that renders correctly and hands back a
+    *dict* where `.plotly.data[0].x` used to be an array, so `np.asarray` on
+    it raises. Nothing pickled a result until restricted AI execution moved
+    out of process, which is when this became reachable.
+    """
+
+    @staticmethod
+    def _roundtrip(result: Any) -> Any:
+        import pickle
+
+        return pickle.loads(pickle.dumps(result))
+
+    def test_trace_arrays_come_back_as_arrays(self) -> None:
+        original = plot(sin(x) / x, verbose=False)
+        clone = self._roundtrip(original)
+        assert isinstance(clone.plotly.data[0].x, np.ndarray)
+        assert np.array_equal(
+            np.asarray(original.plotly.data[0].y, dtype=float),
+            np.asarray(clone.plotly.data[0].y, dtype=float),
+            equal_nan=True,  # 1/x and friends break their line with NaN
+        )
+
+    def test_a_two_dimensional_grid_keeps_its_shape(self) -> None:
+        """A surface's z is the case with a `shape` key in the spec."""
+        original = plot(x * y, verbose=False)
+        clone = self._roundtrip(original)
+        assert np.asarray(clone.plotly.data[0].z).shape == np.asarray(
+            original.plotly.data[0].z
+        ).shape
+
+    def test_slider_frames_survive(self) -> None:
+        from mathslate import slider
+        from mathslate.ui import release_all
+
+        amplitude = slider(-3, 3, default=1, name="pickle_amp")
+        try:
+            original = plot(amplitude * sin(x), verbose=False)
+            clone = self._roundtrip(original)
+            assert len(clone.plotly.frames) == len(original.plotly.frames) > 0
+            assert clone.interactive is True
+        finally:
+            release_all()
+
+    def test_a_mutation_the_caller_made_is_not_thrown_away(self) -> None:
+        """Which is why the figure is decoded rather than regenerated from
+        the plan: `.plotly` is documented as theirs to mutate."""
+        original = plot(sin(x), verbose=False)
+        original.plotly.update_layout(title="mine now")
+        assert self._roundtrip(original).plotly.layout.title.text == "mine now"
+
+    def test_the_other_hatches_still_work_on_the_clone(self) -> None:
+        clone = self._roundtrip(plot(sin(x) / x, verbose=False))
+        assert clone.sympy == sin(x) / x
+        assert all(isinstance(array, np.ndarray) for array in clone.numpy)
+        assert clone.plan.kind == "curve"
+        assert clone.python()
 
 
 class TestDeferredApi:
@@ -170,6 +235,51 @@ class TestTheInternalModuleBoundary:
             assert any(abs(place - b) < 0.05 for b in found), (
                 f"analyze() reports a jump at {place} that the plot does not break at"
             )
+
+
+class TestTheTypesAreVisibleToCallers:
+    """PEP 561 — 422 annotated functions are worth nothing without the marker.
+
+    A package without `py.typed` is treated as untyped by mypy and pyright no
+    matter how thoroughly it is annotated: every name a caller imports from it
+    silently becomes `Any`. The annotations were all already here; only the
+    one empty file saying "mean them" was missing.
+    """
+
+    def test_the_marker_ships_inside_the_package(self) -> None:
+        from pathlib import Path
+
+        assert (Path(ms.__file__).parent / "py.typed").is_file()
+
+    def test_public_functions_are_annotated(self) -> None:
+        import ast
+        from pathlib import Path
+
+        unannotated: list[str] = []
+        for source in sorted(Path(ms.__file__).parent.rglob("*.py")):
+            tree = ast.parse(source.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                # `vararg`/`kwarg` too: `**kwargs` with no annotation is the
+                # easiest hole to leave in an otherwise-typed signature, and
+                # `args + kwonlyargs` alone does not look at it.
+                arguments = [
+                    argument
+                    for argument in (
+                        *node.args.args,
+                        *node.args.kwonlyargs,
+                        node.args.vararg,
+                        node.args.kwarg,
+                    )
+                    if argument is not None
+                ]
+                if node.returns is None or any(
+                    argument.annotation is None and argument.arg not in ("self", "cls")
+                    for argument in arguments
+                ):
+                    unannotated.append(f"{source.name}:{node.lineno} {node.name}")
+        assert unannotated == [], f"unannotated, but shipped as typed: {unannotated}"
 
 
 class TestFrontendAdapters:

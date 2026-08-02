@@ -49,7 +49,7 @@ def encodable(text: str, stream: TextIO) -> bool:
     return True
 
 
-def safe_print(text: str, stream: TextIO | None = None) -> None:
+def safe_print(text: str, stream: TextIO | None = None, **kwargs: object) -> None:
     """``print`` that transliterates rather than raising or printing mojibake.
 
     Checking up front matters: a console configured with ``errors='replace'``
@@ -59,6 +59,6 @@ def safe_print(text: str, stream: TextIO | None = None) -> None:
     if not encodable(text, target):
         text = to_ascii(text)
     try:
-        print(text, file=target)
+        print(text, file=target, **kwargs)
     except UnicodeEncodeError:
-        print(to_ascii(text), file=target)
+        print(to_ascii(text), file=target, **kwargs)

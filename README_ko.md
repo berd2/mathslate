@@ -25,27 +25,11 @@ plot(sin(x)/x).show_python()
 
 ---
 
-## 현황 — v1.0, "성장 환경" — 완료
-
-| 기능 | 상태 |
-|---|---|
-| 2D `plot()`: 단일 곡선, 곡선 중첩, 매개변수 곡선 | ✅ |
-| 적응형 샘플링, 특이점, 정의역, 선 끊기 | ✅ |
-| π-인식 문맥 축 | ✅ |
-| SymPy 재내보내기 및 사전 정의된 기호 | ✅ |
-| `show_python()` | ✅ |
-| Jupyter / Colab / marimo | ✅ |
-| 200개 함수 코퍼스 및 회귀 테스트 | ✅ 200/200 |
-| `analyze()` — v0.5 첫 번째 기능 | ✅ |
-| `slider()` / `animate()` — v0.5 두 번째 기능 | ✅ |
-| 3D: 곡면, 등고선, 음함수 곡선, 공간 곡선 | ✅ |
-| `table()` 및 단일 파일 HTML 내보내기 | ✅ |
-| `dataset()`, 통계, 선형 대수 | ✅ |
-| 선택적 AI 어시스턴트, 교실 워크시트 | ✅ |
-
-연기된 기능은 없습니다. 문서화된 모든 이름은 설명된 대로 동작합니다.
-
 ## 설치
+
+아래 세 가지 중 자신에게 맞는 경로를 선택하세요.
+
+### 1. 이미 Python 환경이 있는 경우
 
 ```bash
 pip install mathslate
@@ -54,12 +38,54 @@ pip install mathslate
 프론트엔드 관련 패키지는 함께 제공되지 않습니다. 노트북 환경에 필요한 것을 추가하세요:
 
 ```bash
-pip install "mathslate[jupyter]"
-```
-
-```bash
+pip install "mathslate[jupyter]"   # ipywidgets + anywidget까지 함께 설치
 pip install "mathslate[marimo]"
 ```
+
+### 2. Python이 낯설거나, 번거로운 설정을 피하고 싶은 경우
+
+명령 한 번이면 됩니다 — [uv](https://docs.astral.sh/uv/)가 없으면 먼저 설치하고, 가상환경을 만들고, mathslate를 설치하고, import가 이미 채워진 시작용 노트북을 만들어 Jupyter Lab으로 열어줍니다:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # `uv --version`이 이미 되면 생략
+bash scripts/quickstart.sh
+```
+
+```powershell
+irm https://astral.sh/uv/install.ps1 | iex   # `uv --version`이 이미 되면 생략
+scripts\quickstart.ps1
+```
+
+이 스크립트가 실제로 실행하는 내용입니다 — 직접 입력하거나 커스터마이즈하고 싶다면 참고하세요:
+
+```bash
+uv venv .venv-mathslate
+uv pip install --python .venv-mathslate "mathslate[jupyter]"   # ipywidgets + anywidget까지 함께 설치됨
+.venv-mathslate/bin/python -m jupyter lab
+```
+
+(Windows에서는 `.venv-mathslate/Scripts/python.exe`입니다. 저장소를 클론한 위치에서 실행했을 때 기존 개발용 환경을 덮어쓰지 않도록, 관례적인 `.venv` 대신 별도 이름을 씁니다.)
+
+노트북마다 필요한 건 첫 셀에 이 한 줄뿐입니다:
+
+```python
+from mathslate import *
+```
+
+이 import 하나가 **설정의 전부**입니다 — 이 문서에 나오는 `plot`, `analyze`, `sin`, `x` 등 모든 것이 여기서 나옵니다. `ipywidgets`/`anywidget`을 직접 import할 일은 없습니다 — mathslate가 `slider()` 내부에서 사용합니다.
+
+marimo를 쓰려면 extra를 `marimo`로, 마지막 줄을 `-m marimo edit`으로 바꾸면 됩니다.
+
+### 3. 설치 없이 그냥 평가만 해보려는 경우
+
+로컬 설치 없이 브라우저에서 바로 실행되는 미리보기(JupyterLite)가 다음 주소에 있습니다: **https://berd2.github.io/mathslate/**. 모든 연산이 브라우저 안에서 Pyodide로 돌아가기 때문에 로컬 설치보다 느리며, 첫 import 전에 셀 하나를 추가로 실행해야 합니다:
+
+```python
+import piplite
+await piplite.install("mathslate")
+```
+
+이 경로는 5분짜리 둘러보기용으로만 생각하시고, 실제로 쓰실 때는 1번이나 2번 경로로 넘어오세요.
 
 > **marimo 사용자:** marimo는 파싱 시점에 `import *`를 거부합니다. 반응형 그래프를 구축하기 위해 각 셀이 정의하는 이름을 정적으로 알아야 하기 때문입니다. 대신 명시적으로 임포트하세요. 나머지는 모두 동일합니다. [매뉴얼](docs/manual_ko.md#marimo-forbids-import-)을 참조하세요.
 >
@@ -210,7 +236,7 @@ from mathslate.ai import ask
 print(ask("plot the tangent over one period").code)   # 읽은 후 실행
 ```
 
-Claude, OpenAI 또는 Gemini 중 하나를 설치하고 키를 설정하세요. 제공업체의 환경 변수로 설정하거나 `ask()`/`configure()`에 `api_key=`를 함께 전달할 수 있습니다. **코어 패키지는 이를 절대 임포트하지 않으며** 완벽하게 오프라인으로 작동합니다. 이는 학교 네트워크와 같은 제한된 환경에서 중요하며, 테스트 제품군은 하위 프로세스에서 이를 검증합니다. `ask()`는 코드를 반환할 뿐 실행하지는 않습니다.
+Claude, OpenAI 또는 Gemini 중 하나를 설치하고 키를 설정하세요. 제공업체의 환경 변수로 설정하거나 `ask()`/`configure()`에 `api_key=`를 함께 전달할 수 있습니다. **코어 패키지는 이를 절대 임포트하지 않으며** 완벽하게 오프라인으로 작동합니다. 이는 학교 네트워크와 같은 제한된 환경에서 중요하며, 테스트 제품군은 하위 프로세스에서 이를 검증합니다. `ask()`는 코드를 반환할 뿐 실행하지는 않습니다. `Suggestion.run()`은 기본적으로 제한된 MathSlate 부분집합만 검증하여 실행하며, 제약 없는 Python 실행은 `unsafe=True`라는 명시적 이스케이프 해치를 통해서만 가능합니다.
 
 ```python
 from mathslate.classroom import worksheet
@@ -222,6 +248,7 @@ worksheet([
 ```
 
 페이지에 그림이 얼마나 많든 Plotly는 한 번만 임베드됩니다.
+`worksheet(...)`, `.html()`, `.save()`, `.preview()`에 `standalone=False`를 넘기면 버전이 고정된 Plotly CDN을 링크하여, 네트워크가 있는 환경에서 산출물 크기를 줄일 수 있습니다.
 
 ## MathSlate가 아닌 것
 

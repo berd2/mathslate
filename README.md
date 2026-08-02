@@ -29,27 +29,11 @@ produced the same picture — including the parts it did quietly on your behalf.
 
 ---
 
-## Status — v1.0, "growth environment" — complete
-
-| Feature | State |
-|---|---|
-| 2D `plot()`: single curve, overlaid curves, parametric curves | ✅ |
-| Adaptive sampling, singularities, domains, line breaking | ✅ |
-| π-aware contextual axes | ✅ |
-| SymPy re-exports and predefined symbols | ✅ |
-| `show_python()` | ✅ |
-| Jupyter / Colab / marimo | ✅ |
-| 200-function corpus and regression tests | ✅ 200/200 |
-| `analyze()` — first of v0.5 | ✅ |
-| `slider()` / `animate()` — second of v0.5 | ✅ |
-| 3D: surfaces, contours, implicit curves, space curves | ✅ |
-| `table()` and single-file HTML export | ✅ |
-| `dataset()`, statistics, linear algebra | ✅ |
-| Optional AI assistant, classroom worksheets | ✅ |
-
-Nothing is deferred. Every documented name does what it says.
-
 ## Install
+
+Pick whichever of these three matches you.
+
+### 1. You already have a Python environment
 
 ```bash
 pip install mathslate
@@ -58,12 +42,66 @@ pip install mathslate
 Nothing frontend-specific comes with it. Add what your notebook needs:
 
 ```bash
-pip install "mathslate[jupyter]"
-```
-
-```bash
+pip install "mathslate[jupyter]"   # pulls in ipywidgets + anywidget
 pip install "mathslate[marimo]"
 ```
+
+### 2. New to Python, or you'd rather not fiddle
+
+One command — installs [uv](https://docs.astral.sh/uv/) first if you don't
+have it, then creates the environment, installs mathslate, writes a starter
+notebook with the import already in it, and opens Jupyter Lab on it:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # skip if `uv --version` already works
+bash scripts/quickstart.sh
+```
+
+```powershell
+irm https://astral.sh/uv/install.ps1 | iex   # skip if `uv --version` already works
+scripts\quickstart.ps1
+```
+
+What that script runs, spelled out — useful if you'd rather type it yourself
+or adapt it:
+
+```bash
+uv venv .venv-mathslate
+uv pip install --python .venv-mathslate "mathslate[jupyter]"   # ipywidgets + anywidget come with it
+.venv-mathslate/bin/python -m jupyter lab
+```
+
+(`.venv-mathslate/Scripts/python.exe` on Windows. The environment is named
+rather than the usual `.venv` so running this inside a clone cannot replace a
+development environment already there.)
+
+The one line every notebook needs, at the top of the first cell:
+
+```python
+from mathslate import *
+```
+
+That single import is *the whole setup* — `plot`, `analyze`, `sin`, `x` and
+everything else in this README come from it. `ipywidgets`/`anywidget` are
+never imported directly; mathslate uses them internally for `slider()`.
+
+Swap the extra for `marimo` and the last line for `-m marimo edit` to use
+marimo instead.
+
+### 3. Just evaluating — no install at all
+
+A live, in-browser preview (JupyterLite, no local setup) runs at
+**https://berd2.github.io/mathslate/**. It's slower than a local install —
+everything runs client-side via Pyodide — and needs one extra cell before the
+first import:
+
+```python
+import piplite
+await piplite.install("mathslate")
+```
+
+Treat it as a five-minute look, not a working environment; move to path 1 or 2
+once you're sold.
 
 > **marimo users:** marimo rejects `import *` at parse time — it needs to know
 > statically which names each cell defines in order to build its reactive

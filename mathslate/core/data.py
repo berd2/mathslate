@@ -117,6 +117,10 @@ class Dataset:
             frozen[name] = copied
         object.__setattr__(self, "columns", MappingProxyType(frozen))
 
+    def __reduce__(self) -> tuple[type["Dataset"], tuple[dict[str, Array]]]:
+        """Rebuild the immutable column mapping when crossing a process boundary."""
+        return (type(self), (dict(self.columns),))
+
     # -- shape -------------------------------------------------------------
 
     @property

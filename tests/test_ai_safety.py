@@ -8,7 +8,6 @@ import pytest
 
 from mathslate.ai import Suggestion
 from mathslate.ai import suggest as _suggest
-from mathslate.core._budget import SymbolicTimeout
 from mathslate.errors import UnsupportedInputError
 
 
@@ -57,6 +56,14 @@ class TestRestrictedExecution:
         with pytest.raises(UnsupportedInputError, match="environ"):
             _suggestion("secret = os.environ['OPENAI_API_KEY']").run({"os": os})
 
+    def test_a_supplied_object_cannot_be_called_through_an_allowed_method(self) -> None:
+        class Capability:
+            def python(self) -> None:
+                raise AssertionError("restricted code reached a caller capability")
+
+        with pytest.raises(UnsupportedInputError, match="does not accept a namespace"):
+            _suggestion("victim.python()").run({"victim": Capability()})
+
     def test_invalid_python_is_reported_as_input_error(self) -> None:
         with pytest.raises(UnsupportedInputError, match="valid Python"):
             _suggestion("plot(").validate()
@@ -91,24 +98,50 @@ class TestRestrictedExecutionHasATimeBudget:
     """The AST allowlist bounds what a suggestion can *name*, not what a
     legal expression costs to run: ``9**9**9`` is three Constant/BinOp nodes
     and passes validation, yet computing it exhausts memory. ``run()`` must
-    still bound it — but proving that with the real expression would leave a
-    multi-second, memory-hungry thread running loose in the test session, so
-    the timeout is exercised at the mechanism boundary instead.
+    still bound it.
+
+    Now that the work happens in a separate process, the real expression can
+    be used: the bomb is confined to a child that is killed on the deadline,
+    so nothing memory-hungry is left loose in the test session. That was the
+    only reason the timeout used to be checked at the mechanism boundary.
     """
 
     def test_validation_alone_does_not_catch_an_expression_bomb(self) -> None:
         """Documents the gap the execution budget exists to cover."""
         _suggest._validate_code("x = 9**9**9")  # does not raise
 
-    def test_a_timeout_becomes_an_input_error(
+    def test_the_real_bomb_is_stopped_and_reported(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def fake_within_budget(operation: object, *args: object, **kwargs: object) -> None:
-            raise SymbolicTimeout("simulated")
+        """The whole path, with a short budget so the test stays quick.
 
-        monkeypatch.setattr(_suggest, "within_budget", fake_within_budget)
+        Patching `_run_restricted` to raise the very error then asserted made
+        this a tautology: it proved that a function which raises X propagates
+        X, and would have passed against a `run()` with no budget at all.
+        """
+        monkeypatch.setattr(_suggest, "_RUN_BUDGET", 3.0)
         with pytest.raises(UnsupportedInputError, match="execution budget"):
+            _suggestion("x = 9**9**99").run()
+
+    def test_a_host_that_cannot_start_a_process_says_so(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Pyodide has no fork, and a hardened container may refuse. `run()`
+        promises `UnsupportedInputError`, not a raw OSError from subprocess."""
+
+        def refuse(*args: object, **kwargs: object) -> None:
+            raise OSError("process creation is not permitted here")
+
+        monkeypatch.setattr(_suggest.subprocess, "run", refuse)
+        with pytest.raises(UnsupportedInputError, match="separate Python process"):
             _suggestion("x = 1").run()
+
+    def test_an_empty_namespace_is_refused_rather_than_quietly_dropped(self) -> None:
+        """`run({})` used to be filled in place. Across a process boundary it
+        cannot be, and returning a different mapping without a word would
+        leave the caller reading their own empty dict."""
+        with pytest.raises(UnsupportedInputError, match="does not accept a namespace"):
+            _suggestion("x = 1").run({})
 
     def test_ordinary_code_is_unaffected(self) -> None:
         scope = _suggestion("result = plot(sin(x), verbose=False)").run()

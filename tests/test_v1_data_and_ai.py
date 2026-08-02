@@ -397,15 +397,38 @@ class TestTheCoreStaysOffline:
         assert out.stdout.strip() == "[]"
 
     def test_no_ai_package_is_a_runtime_dependency(self) -> None:
-        text = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+        # `read_text()` alone decodes with the *locale* encoding, so this blew
+        # up with a UnicodeDecodeError on any machine whose default is not
+        # UTF-8 (cp949, cp1252) the moment pyproject.toml grew a non-ASCII
+        # character — which the comments in its dependency table have.
+        text = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
         runtime = text.split("dependencies = [", 1)[1].split("]", 1)[0]
         for package in ("anthropic", "openai", "google-genai"):
             assert package not in runtime
 
 
 class TestTheAiLayer:
-    def test_it_says_exactly_what_is_missing(self) -> None:
+    def test_it_says_exactly_what_is_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On a machine with nothing installed — which is what the message is
+        for, and the only state in which it names the packages to install.
+
+        Both halves have to be forced. Reading whatever the developer's
+        environment happens to hold made this fail wherever an SDK was
+        installed (the message then names the missing *key*, correctly), and
+        on a machine with a real key in the environment `ask()` would not
+        raise at all: it would reach `backend.complete()` and bill a live
+        request to whoever ran the tests.
+        """
         from mathslate.ai import ask
+        from mathslate.ai.providers import PROVIDERS, Provider
+
+        monkeypatch.setattr(Provider, "installed", lambda self: False)
+        for provider in PROVIDERS:
+            monkeypatch.delenv(provider.env_var, raising=False)
 
         with pytest.raises(UnsupportedInputError) as caught:
             ask("plot sine")

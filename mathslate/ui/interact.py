@@ -231,13 +231,23 @@ class Slider:
                 "or use the Plotly slider plot() already draws, which needs nothing."
             ) from error
 
-        return ipywidgets.FloatSlider(
+        widget = ipywidgets.FloatSlider(
             min=self.start,
             max=self.stop,
             step=self.step or (self.stop - self.start) / (DEFAULT_STEPS - 1),
             value=self.value,
             description=self.label,
         )
+        # The native control is an alternative to pre-computed Plotly frames,
+        # not a disconnected lookalike. Keep the binding registry current so a
+        # later plot() or a notebook cell depending on ``a.value`` uses the
+        # value the learner just selected.
+        def sync(change: dict[str, Any]) -> None:
+            if change.get("name") == "value":
+                self.value = float(change["new"])
+
+        widget.observe(sync, names="value")
+        return widget
 
     # -- display -----------------------------------------------------------
 

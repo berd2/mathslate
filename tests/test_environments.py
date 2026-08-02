@@ -113,7 +113,6 @@ def test_the_frontend_adapter_sees_each_environment(monkeypatch: pytest.MonkeyPa
 
 
 def test_the_frontend_adapter_recognizes_jupyterlite(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pyodide has an IPython kernel but not a ZMQInteractiveShell name."""
     from mathslate.ui import Frontend, detect_frontend
 
     monkeypatch.setattr(sys, "platform", "emscripten")
@@ -123,7 +122,6 @@ def test_the_frontend_adapter_recognizes_jupyterlite(monkeypatch: pytest.MonkeyP
 def test_jupyterlite_report_gives_a_piplite_install_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A browser kernel cannot follow a desktop ``pip install`` instruction."""
     from mathslate import result
     from mathslate.ui import adapters
 
@@ -136,7 +134,6 @@ def test_jupyterlite_report_gives_a_piplite_install_command(
 def test_jupyterlite_missing_widgets_warns_and_returns_a_plain_figure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A missing optional widget must never turn a graph into a traceback."""
     from mathslate import plot, sin, x
 
     monkeypatch.setattr(sys, "platform", "emscripten")

@@ -101,9 +101,8 @@ class TestTheMechanism:
         assert within_budget(lambda: 2 + 2) == 4
 
     def test_webassembly_runs_inline_when_worker_threads_are_unavailable(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Pyodide exposes ``threading`` but cannot start a Thread."""
         monkeypatch.setattr(_budget.sys, "platform", "emscripten")
         assert within_budget(lambda: "browser-safe", seconds=0.001) == "browser-safe"
 

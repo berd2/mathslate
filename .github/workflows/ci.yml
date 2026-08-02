@@ -23,7 +23,18 @@ jobs:
       # The marimo tour is maintained separately by its author.  Its expensive
       # rendering and generator-synchronisation checks remain available for
       # manual verification, but must not make the library CI fail.
-      - run: python -m pytest -q --ignore=tests/test_tour_notebooks.py
+      #
+      # Only those three classes, not the whole file: ignoring all of it also
+      # dropped `TestItActuallyRuns`, the one check that executes the Jupyter
+      # tour in a real kernel — and so the one that would have caught
+      # `plot(a*sin(x))` raising on display in every notebook (a figure with
+      # frames cannot become a `FigureWidget`). Nothing else in the suite
+      # exercises that path end to end.
+      - run: |
+          python -m pytest -q \
+            --deselect tests/test_tour_notebooks.py::TestTheyAreGeneratedAndCurrent \
+            --deselect tests/test_tour_notebooks.py::TestTheMarimoGraphIsSound \
+            --deselect tests/test_tour_notebooks.py::TestItRunsInMarimoToo
 
   no_frontend_dependency:
     name: acceptance criterion 6 - no frontend dependency

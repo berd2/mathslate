@@ -754,6 +754,13 @@ plot(sin(x)/x, (x, -10, 10))          # the figure, with x/y min·max boxes
 The sidebar also has `Auto Y`, `Reset`, and X/Y `in`/`out` buttons. On a true
 3D surface, `Auto Y` becomes `Auto Z`, and Z `in`/`out` buttons appear too.
 
+`Auto Y` fits the vertical window to the X range currently in the boxes: the
+automatic clip where a pole makes one necessary, and otherwise the extent of
+the values actually drawn. It clears an `ylim` you passed to `plot()` rather
+than fitting inside it — asking to auto-fit is asking for a different window
+than the one you fixed. The boxes always hold the axis's own units, which on
+`yscale="log"` means powers of ten, the same convention `ylim` follows there.
+
 Call it explicitly to keep the widget from a result you printed with
 `verbose=False`, or from a plot with view controls already set —
 `width=`/`height=` set the figure's own pixel size the same way
