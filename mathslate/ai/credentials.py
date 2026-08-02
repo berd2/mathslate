@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib
 import sys
 from dataclasses import dataclass
+from types import ModuleType
 
 from ..errors import UnsupportedInputError
 
@@ -33,7 +34,7 @@ class SavedCredential:
     model: str | None = None
 
 
-def _keyring(*, required: bool):
+def _keyring(*, required: bool) -> ModuleType | None:
     if sys.platform == "emscripten":
         if required:
             raise UnsupportedInputError(

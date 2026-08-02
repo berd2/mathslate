@@ -852,8 +852,10 @@ print(plot((sqrt(t), t), (t, -5, 5)).plan.series[0].sample.domain_intervals)
 5. 데이터가 정말로 치솟거나 극점이 알려진 경우에만 적용합니다.
 
 ```python
-print([round(v, 2) for v in plot(tan(x), verbose=False).plan.y_range])
-print([round(v, 2) for v in plot(sin(x)/x, verbose=False).plan.y_range])
+tan_range = plot(tan(x), verbose=False).plan.y_range
+sinc_range = plot(sin(x)/x, verbose=False).plan.y_range
+print(None if tan_range is None else [round(v, 2) for v in tan_range])
+print(None if sinc_range is None else [round(v, 2) for v in sinc_range])
 print(plot(sin(x), verbose=False).plan.y_range)
 ```
 

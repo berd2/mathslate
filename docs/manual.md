@@ -1048,8 +1048,10 @@ smear. So a visible y-window is chosen:
 5. apply only when the data really runs away, or when poles are known.
 
 ```python
-print([round(v, 2) for v in plot(tan(x), verbose=False).plan.y_range])
-print([round(v, 2) for v in plot(sin(x)/x, verbose=False).plan.y_range])
+tan_range = plot(tan(x), verbose=False).plan.y_range
+sinc_range = plot(sin(x)/x, verbose=False).plan.y_range
+print(None if tan_range is None else [round(v, 2) for v in tan_range])
+print(None if sinc_range is None else [round(v, 2) for v in sinc_range])
 print(plot(sin(x), verbose=False).plan.y_range)
 ```
 
