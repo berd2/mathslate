@@ -817,16 +817,22 @@ class TestRangeControlsDisplayController:
         pytest.importorskip("ipywidgets")
         pytest.importorskip("anywidget")
         figure_widget, controls = _unwrap(plot(exp(x + y), verbose=False).range_controls())
-        z_scale_switch, = _widgets(controls, "ToggleButtons")
+        z_scale_switch = next(
+            switch for switch in _widgets(controls, "HBox")
+            if all(hasattr(button, "description") for button in switch.children)
+            and [button.description for button in switch.children] == ["Linear", "Log"]
+        )
+        z_log = z_scale_switch.children[1]
         mesh_switch = next(
             switch for switch in _widgets(controls, "ToggleButton")
             if switch.description == "Off"
         )
         density, = _widgets(controls, "IntSlider")
 
-        assert z_scale_switch.description == ""
+        assert z_scale_switch.layout.width == "148px"
+        assert [button.layout.width for button in z_scale_switch.children] == ["72px", "72px"]
         assert mesh_switch.value is False
-        z_scale_switch.value = "log"
+        z_log.value = True
         mesh_switch.value = True
         assert figure_widget.layout.scene.zaxis.type == "log"
         assert density.disabled is True

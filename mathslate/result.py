@@ -1115,16 +1115,35 @@ class PlotResult:
             ), names="value",
         )
 
-        z_scale_options = [("Linear", "linear")]
-        if can_log_z:
-            z_scale_options.append(("Log", "log"))
-        z_scale_switch = widgets.ToggleButtons(
-            options=z_scale_options,
-            description="",
-            style={"button_width": "72px"},
-            layout=widgets.Layout(width="148px", min_width="0"),
+        # Use the same fixed HBox segment controls as Mode and Mesh.  The
+        # ipywidgets ToggleButtons view can wrap its inner buttons under a 3D
+        # controller's narrower flex layout, leaving ``Linear`` and ``Log`` on
+        # separate lines despite the parent having enough visible width.
+        z_linear = widgets.ToggleButton(
+            value=True, description="Linear",
+            layout=widgets.Layout(width="72px", min_width="0"),
         )
-        z_scale_switch.observe(_change_z_scale, names="value")
+        z_scale_buttons = [z_linear]
+        if can_log_z:
+            z_log = widgets.ToggleButton(
+                value=False, description="Log",
+                layout=widgets.Layout(width="72px", min_width="0"),
+            )
+            z_scale_buttons.append(z_log)
+            z_linear.observe(
+                lambda change: _exclusive_toggle(
+                    change, z_linear, z_log, "linear", _change_z_scale
+                ), names="value",
+            )
+            z_log.observe(
+                lambda change: _exclusive_toggle(
+                    change, z_log, z_linear, "log", _change_z_scale
+                ), names="value",
+            )
+        z_scale_switch = widgets.HBox(
+            z_scale_buttons,
+            layout=widgets.Layout(width="148px", min_width="0", overflow="hidden"),
+        )
 
         initial_mesh = controller_options.mesh
         mesh_enabled = bool(initial_mesh)
