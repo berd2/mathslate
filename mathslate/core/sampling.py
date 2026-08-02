@@ -743,7 +743,13 @@ def sample_expression(
             tuple(sorted(set(breakpoints))),
             hi - lo,
             config,
-            force=bool(info.singular_points),
+            # A symbolic singularity is not necessarily a pole: ``sin(x)/x``
+            # has a removable hole at zero, and forcing the percentile window
+            # around every such point discards its legitimate central peak.
+            # The ordinary tail test below still recognises true poles from
+            # their unbounded samples, while bounded removable holes retain
+            # the full finite span.
+            force=False,
         ),
         vectorized=function.vectorized,
         notes=tuple(notes),

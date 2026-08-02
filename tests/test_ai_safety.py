@@ -19,6 +19,18 @@ class TestRestrictedExecution:
     def test_ordinary_mathslate_code_runs(self) -> None:
         scope = _suggestion("result = plot(sin(x), verbose=False)").run()
         assert scope["result"].plan.kind == "curve"
+        assert "expand" not in scope
+
+    def test_a_final_plot_expression_is_returned_as_the_result(self) -> None:
+        scope = _suggestion("plot(tan(x), verbose=False)").run()
+        assert scope["result"].plan.kind == "curve"
+        assert set(scope) == {"result"}
+
+    def test_run_shows_the_visible_code_by_default(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _suggestion("result = sin(x)").run()
+        assert "result = sin(x)" in capsys.readouterr().out
 
     def test_dataset_fit_method_is_allowed(self) -> None:
         scope = _suggestion(

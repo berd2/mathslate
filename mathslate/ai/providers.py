@@ -28,6 +28,8 @@ __all__ = [
 
 #: How many tokens a suggestion may take. MathSlate answers are short.
 MAX_TOKENS: int = 1500
+#: A notebook must not look frozen forever when a provider or network stalls.
+REQUEST_TIMEOUT_SECONDS: float = 30.0
 
 
 class Backend(Protocol):
@@ -61,7 +63,18 @@ class Provider:
             return False
 
     def configured(self) -> bool:
+        if self.name == "gemini":
+            return bool(
+                os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+            )
         return bool(os.environ.get(self.env_var))
+
+    @property
+    def credential_label(self) -> str:
+        """The environment variable name(s) a user can configure."""
+        if self.name == "gemini":
+            return "GOOGLE_API_KEY or GEMINI_API_KEY"
+        return self.env_var
 
     def ready(self) -> bool:
         return self.installed() and self.configured()
@@ -70,7 +83,7 @@ class Provider:
         if not self.installed():
             return f"{self.name}: not installed (pip install {self.pip_name})"
         if not self.configured():
-            return f"{self.name}: installed, but {self.env_var} is not set"
+            return f"{self.name}: installed, but {self.credential_label} is not set"
         return f"{self.name}: ready"
 
 
@@ -86,7 +99,9 @@ class _Anthropic:
     def complete(self, system: str, question: str, model: str) -> str:
         import anthropic
 
-        client = anthropic.Anthropic(api_key=self._api_key or None)
+        client = anthropic.Anthropic(
+            api_key=self._api_key or None, timeout=REQUEST_TIMEOUT_SECONDS
+        )
         reply = client.messages.create(
             model=model,
             max_tokens=MAX_TOKENS,
@@ -105,7 +120,9 @@ class _OpenAI:
     def complete(self, system: str, question: str, model: str) -> str:
         import openai
 
-        client = openai.OpenAI(api_key=self._api_key or None)
+        client = openai.OpenAI(
+            api_key=self._api_key or None, timeout=REQUEST_TIMEOUT_SECONDS
+        )
         reply = client.chat.completions.create(
             model=model,
             max_completion_tokens=MAX_TOKENS,
@@ -125,7 +142,18 @@ class _Gemini:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=self._api_key or None)
+        # The SDK emits a warning and chooses for itself when both names are
+        # present. Pass the documented GOOGLE_API_KEY precedence explicitly so
+        # `ask()` is quiet and deterministic even in an inherited shell.
+        key = (
+            self._api_key
+            or os.environ.get("GOOGLE_API_KEY")
+            or os.environ.get("GEMINI_API_KEY")
+        )
+        client = genai.Client(
+            api_key=key or None,
+            http_options=types.HttpOptions(timeout=int(REQUEST_TIMEOUT_SECONDS * 1000)),
+        )
         reply = client.models.generate_content(
             model=model,
             contents=question,
@@ -160,7 +188,7 @@ PROVIDERS: tuple[Provider, ...] = (
         package="google.genai",
         pip_name="google-genai",
         env_var="GOOGLE_API_KEY",
-        default_model="gemini-2.5-pro",
+        default_model="gemini-3.5-flash",
         build=_Gemini,
     ),
 )
@@ -190,7 +218,7 @@ def resolve_provider(
                     )
                 if not api_key and not provider.configured():
                     raise UnsupportedInputError(
-                        f"provider {name!r} needs {provider.env_var} in the "
+                        f"provider {name!r} needs {provider.credential_label} in the "
                         "environment or an explicit api_key=."
                     )
                 return provider

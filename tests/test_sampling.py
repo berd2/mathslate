@@ -94,10 +94,13 @@ class TestStep5YClipping:
 
     def test_a_removable_singularity_does_not_squash_the_curve(self) -> None:
         result = sampling.sample_expression(sin(x) / x, x, (-10.0, 10.0))
-        assert result.y_range is not None
-        low, high = result.y_range
-        assert high >= 0.99  # the value approached at x = 0 stays visible
-        assert low <= -0.2
+        # A hole with a finite limit is not a pole.  Leave the view automatic
+        # so it is based on every finite sample, including the peak tending to
+        # one at zero, instead of forcing a percentile clip around the hole.
+        assert result.y_range is None
+        finite = result.y[np.isfinite(result.y)]
+        assert finite.max() >= 0.99
+        assert finite.min() <= -0.2
 
 
 class TestStep6Vectorisation:

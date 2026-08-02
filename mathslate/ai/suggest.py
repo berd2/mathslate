@@ -30,12 +30,26 @@ from ..core._budget import set_budget
 from ..errors import UnsupportedInputError
 from .providers import Backend, resolve_provider
 
-__all__ = ["Suggestion", "ask", "configure", "configured", "forget", "system_prompt"]
+__all__ = [
+    "check_connection",
+    "RunResult",
+    "Suggestion",
+    "ask",
+    "configure",
+    "configured",
+    "forget",
+    "system_prompt",
+]
 
 _FENCE = re.compile(r"```(?:python)?\n(?P<body>.*?)```", re.DOTALL)
 
 #: Set by :func:`configure`; ``ask()`` falls back to auto-detection.
-_DEFAULTS: dict[str, Any] = {"provider": None, "model": None, "api_key": None}
+_DEFAULTS: dict[str, Any] = {
+    "provider": None,
+    "model": None,
+    "api_key": None,
+    "remembered": False,
+}
 
 # Names the assistant is invited to use and that are safe to expose without the
 # rest of Python's builtins or module system. In particular, ``lambdify`` is not
@@ -110,30 +124,69 @@ _ALLOWED_AST_NODES: tuple[type[ast.AST], ...] = (
 )
 
 
+class RunResult(dict[str, Any]):
+    """Values produced by :meth:`Suggestion.run`.
+
+    The isolated executor deliberately keeps its MathSlate/SymPy helper names
+    private.  This mapping therefore contains only names written by the
+    suggestion.  When the visible code ends with an expression (as generated
+    plot requests normally do), its value is available as ``result`` and is
+    displayed directly in a notebook.
+    """
+
+    def _ipython_display_(self) -> None:
+        """Render a final plot/value instead of the implementation mapping."""
+        if "result" not in self:
+            return
+        try:
+            from IPython.display import display
+        except ImportError:
+            return
+        display(self["result"])
+
+
 def configure(
     provider: str | None = None,
     model: str | None = None,
     api_key: str | None = None,
+    *,
+    remember: bool = False,
 ) -> None:
     """Fix the provider, model or key for the rest of the session.
 
     Every argument is optional and ``None`` means "leave as it was", so a
-    notebook can set the provider once in its first cell.
+    notebook can set the provider once in its first cell. ``remember=True``
+    stores the key in the operating-system credential manager, never in the
+    project or notebook.
     """
     current_provider = _DEFAULTS["provider"]
     current_key = _DEFAULTS["api_key"]
-    next_key = current_key if api_key is None else api_key
+    switching_provider = (
+        provider is not None
+        and current_provider is not None
+        and provider != current_provider
+    )
+    # A session key is bound to its provider. On a switch, only an explicitly
+    # supplied key or one saved for the new provider may be considered.
+    next_key = (
+        None if switching_provider and api_key is None
+        else current_key if api_key is None
+        else api_key
+    )
+    loaded_saved = False
+    if provider is not None and next_key is None:
+        from .credentials import load_credential
+
+        saved = load_credential(provider)
+        next_key = saved.api_key if saved is not None else None
+        loaded_saved = saved is not None
     if provider is not None:
-        switching_provider = (
-            current_provider is not None and provider != current_provider
-        )
         if switching_provider and api_key is None:
             # An explicit key belongs to the provider it was configured with.
             # Never carry it across a provider switch. If the new provider has
             # an environment credential it can be selected safely; otherwise
             # the caller must supply the matching key alongside the provider.
-            resolve_provider(provider)
-            next_key = None
+            resolve_provider(provider, api_key=next_key)
         else:
             resolve_provider(
                 provider, api_key=next_key
@@ -141,27 +194,60 @@ def configure(
         _DEFAULTS["provider"] = provider
     if model is not None:
         _DEFAULTS["model"] = model
-    if api_key is not None or (provider is not None and next_key is None):
+    if api_key is not None or loaded_saved or (provider is not None and next_key is None):
         _DEFAULTS["api_key"] = next_key
+        _DEFAULTS["remembered"] = loaded_saved
+    if remember:
+        from .credentials import save_credential
+
+        chosen = provider or _DEFAULTS["provider"]
+        key = api_key or _DEFAULTS["api_key"]
+        if not chosen or not key:
+            raise UnsupportedInputError(
+                "remember=True needs both a provider and an API key."
+            )
+        save_credential(chosen, key, model or _DEFAULTS["model"])
+        _DEFAULTS["remembered"] = True
 
 
-def forget() -> None:
+def forget(*, persistent: bool = False, provider: str | None = None) -> None:
     """Drop the configured provider, model and key.
 
     ``configure()`` treats ``None`` as "leave as it was", which is what makes
     it convenient to call twice — and which left no way to take a key back out
     of the session once it was in. This is that way.
     """
-    _DEFAULTS.update({"provider": None, "model": None, "api_key": None})
+    chosen = provider or _DEFAULTS["provider"]
+    if persistent:
+        from .credentials import delete_credential
+
+        delete_credential(chosen)
+    _DEFAULTS.update(
+        {"provider": None, "model": None, "api_key": None, "remembered": False}
+    )
 
 
 def configured() -> dict[str, Any]:
     """What :func:`configure` is currently holding. The key is never shown."""
     key = _DEFAULTS["api_key"]
+    if key is None:
+        from .credentials import load_credential
+
+        saved = load_credential(_DEFAULTS["provider"])
+        if saved is not None:
+            return {
+                "provider": saved.provider,
+                "model": _DEFAULTS["model"] or saved.model,
+                "api_key": "saved securely",
+            }
     return {
         "provider": _DEFAULTS["provider"],
         "model": _DEFAULTS["model"],
-        "api_key": None if key is None else "set (hidden)",
+        "api_key": (
+            None
+            if key is None
+            else "saved securely" if _DEFAULTS["remembered"] else "set (hidden)"
+        ),
     }
 
 
@@ -202,19 +288,28 @@ class Suggestion:
         namespace: dict[str, Any] | None = None,
         *,
         unsafe: bool = False,
-    ) -> dict[str, Any]:
+        show_code: bool = True,
+    ) -> RunResult | dict[str, Any]:
         """Execute the visible code after validating it.
 
         The default namespace contains only the documented MathSlate/SymPy
         names and a minimal builtin set. Restricted code runs in a separate
         process under a wall-clock budget (see :data:`_RUN_BUDGET`), so a
         legal-looking but runaway expression cannot hang or corrupt the caller.
+        Its return value contains only values the suggestion created, never the
+        internal MathSlate/SymPy execution namespace. A final bare expression
+        such as ``plot(tan(x))`` is returned as ``result`` and displayed in a
+        notebook. By default it also prints the visible code first, so
+        ``ask("...").run()`` retains the review step; pass ``show_code=False``
+        only when the code is already visible in another interface.
         A supplied namespace is deliberately available only in ``unsafe`` mode:
         its objects could carry capabilities that an allowed method name could
         invoke. Pass ``unsafe=True`` to recover normal Python execution,
         including imports, filesystem access, a supplied namespace and no time
         limit; never use that mode for untrusted model output.
         """
+        if show_code:
+            self.show()
         scope: dict[str, Any] = namespace if namespace is not None else {}
         if unsafe:
             if "plot" not in scope:
@@ -239,11 +334,9 @@ class Suggestion:
             )
 
         assigned, output = _run_restricted(self.code)
-        scope = _safe_scope()
-        scope.update(assigned)
         if output:
             safe_print(output, end="")
-        return scope
+        return RunResult(assigned)
 
     def _repr_html_(self) -> str:
         escaped = (
@@ -356,14 +449,40 @@ def _restricted_process_entry(request: bytes) -> bytes:
         scope = _safe_scope()
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            exec(compile(code, "<mathslate.ai>", "exec"), scope)  # noqa: S102
+            value = _execute_and_capture_final_expression(code, scope)
         assigned = {name: scope[name] for name in assigned_names if name in scope}
+        if value is not _NO_FINAL_EXPRESSION:
+            assigned["result"] = value
         response: tuple[str, Any] = ("ok", (assigned, output.getvalue()))
         # Serialize before returning so unpicklable results become a useful
         # restricted-execution error rather than a broken pipe.
         return pickle.dumps(response)
     except BaseException as error:  # noqa: BLE001 - crosses a process boundary
         return pickle.dumps(("error", f"{type(error).__name__}: {error}"))
+
+
+_NO_FINAL_EXPRESSION = object()
+
+
+def _execute_and_capture_final_expression(code: str, scope: dict[str, Any]) -> Any:
+    """Execute *code*, evaluating its final expression as the user result.
+
+    ``exec`` intentionally discards an expression's value.  That makes a
+    generated one-line ``plot(...)`` appear to do nothing once it has run in
+    the isolated process.  Splitting only the final ``ast.Expr`` retains normal
+    statement semantics while allowing the caller to receive and display it.
+    """
+    tree = ast.parse(code, filename="<mathslate.ai>", mode="exec")
+    if not tree.body or not isinstance(tree.body[-1], ast.Expr):
+        exec(compile(tree, "<mathslate.ai>", "exec"), scope)  # noqa: S102
+        return _NO_FINAL_EXPRESSION
+
+    statements = tree.body[:-1]
+    if statements:
+        prefix = ast.Module(body=statements, type_ignores=[])
+        exec(compile(ast.fix_missing_locations(prefix), "<mathslate.ai>", "exec"), scope)  # noqa: S102
+    final = ast.Expression(tree.body[-1].value)
+    return eval(compile(ast.fix_missing_locations(final), "<mathslate.ai>", "eval"), scope)  # noqa: S307
 
 
 def _safe_dataset(
@@ -530,13 +649,41 @@ def ask(
     provider_name = provider
     if provider_name is None and api_key is None:
         provider_name = _DEFAULTS["provider"]
+    saved = None
+    if effective_key is None and api_key is None:
+        from .credentials import load_credential
+
+        saved = load_credential(provider_name)
+        if saved is not None:
+            provider_name = saved.provider
+            effective_key = saved.api_key
     chosen = resolve_provider(
         provider_name, api_key=effective_key
     )
-    model_name = model or _DEFAULTS["model"] or chosen.default_model
+    model_name = (
+        model
+        or _DEFAULTS["model"]
+        or (saved.model if saved is not None else None)
+        or chosen.default_model
+    )
     backend: Backend = chosen.build(effective_key)
 
-    reply = backend.complete(system_prompt(), question, model_name)
+    try:
+        reply = backend.complete(system_prompt(), question, model_name)
+    except Exception as exc:
+        detail = str(exc).strip()
+        if effective_key:
+            detail = detail.replace(effective_key, "[hidden]")
+        raise UnsupportedInputError(
+            f"{chosen.name.title()} did not complete the request "
+            f"({type(exc).__name__}: {detail or 'no detail'}). "
+            "Check the API key, model access, quota, and network, then retry."
+        ) from exc
+    if not reply or not reply.strip():
+        raise UnsupportedInputError(
+            f"provider {chosen.name!r} returned no text. Retry the request, "
+            "check the provider status, or choose another model."
+        )
     code, commentary = _split(reply)
     suggestion = Suggestion(
         code=code,
@@ -550,6 +697,60 @@ def ask(
         safe_print(f"# {chosen.name} · {model_name}")
         safe_print(code)
     return suggestion
+
+
+def check_connection(
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+) -> str:
+    """Check a provider credential without asking it a MathSlate question.
+
+    Saved credentials are resolved exactly as they are by :func:`ask`.  The
+    probe sends only a fixed, non-mathematical message and returns a concise
+    local status instead of treating the provider reply as generated code.
+    """
+    effective_key = api_key or _DEFAULTS["api_key"]
+    provider_name = provider
+    if provider_name is None and api_key is None:
+        provider_name = _DEFAULTS["provider"]
+    saved = None
+    if effective_key is None and api_key is None:
+        from .credentials import load_credential
+
+        saved = load_credential(provider_name)
+        if saved is not None:
+            provider_name = saved.provider
+            effective_key = saved.api_key
+    chosen = resolve_provider(provider_name, api_key=effective_key)
+    model_name = (
+        model
+        or _DEFAULTS["model"]
+        or (saved.model if saved is not None else None)
+        or chosen.default_model
+    )
+    backend: Backend = chosen.build(effective_key)
+    try:
+        reply = backend.complete(
+            "You are an API connection check. Reply with exactly OK.",
+            "Reply exactly OK.",
+            model_name,
+        )
+    except Exception as exc:
+        detail = str(exc).strip()
+        if effective_key:
+            detail = detail.replace(effective_key, "[hidden]")
+        raise UnsupportedInputError(
+            f"{chosen.name.title()} did not complete the connection check "
+            f"({type(exc).__name__}: {detail or 'no detail'}). "
+            "Check the API key, model access, quota, and network, then retry."
+        ) from exc
+    if not reply or not reply.strip():
+        raise UnsupportedInputError(
+            f"provider {chosen.name!r} returned no text for the connection check. "
+            "Check the API key, model access, quota, and network, then retry."
+        )
+    return f"{chosen.name.title()} connection is working ({model_name})."
 
 
 def _split(reply: str) -> tuple[str, str]:

@@ -35,13 +35,27 @@ from .providers import (
     available_providers,
     resolve_provider,
 )
-from .suggest import Suggestion, ask, configure, configured, forget, system_prompt
+from .suggest import (
+    RunResult,
+    Suggestion,
+    ask,
+    check_connection,
+    configure,
+    configured,
+    forget,
+    system_prompt,
+)
+from .ui import AssistantPanel, assistant
 
 __all__ = [
     "ask",
+    "check_connection",
+    "assistant",
+    "AssistantPanel",
     "configure",
     "configured",
     "forget",
+    "RunResult",
     "Suggestion",
     "Provider",
     "PROVIDERS",

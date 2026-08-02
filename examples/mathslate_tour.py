@@ -1033,8 +1033,9 @@ def _(mo):
         ## 15. The optional AI assistant
 
         Entirely optional and entirely offline-safe: the core never imports it,
-        no provider is bundled, and it returns code it does **not** run. This
-        cell makes no network call — it only reports what is available.
+        no provider is bundled, and generated code is shown before it can run.
+        The panel guides first-time setup, reports progress and errors, and can
+        remember a key in this computer's secure credential manager.
         """
     )
     return
@@ -1042,29 +1043,25 @@ def _(mo):
 
 @app.cell
 def _():
-    from mathslate.ai import PROVIDERS, available_providers, system_prompt
+    from mathslate.ai import assistant, ask
 
-    for provider in PROVIDERS:
-        print(provider.describe())
-    print()
-    print("ready:", [p.name for p in available_providers()] or "none — the rest of MathSlate is unaffected")
-    print("prompt size:", len(system_prompt()), "characters")
-    return (p,)
+    assistant("plot the tangent over one period")
+    return
 
 
 @app.cell
 def _(mo):
     mo.md(
         r"""
-        With a provider installed and its key set, `ask()` returns a
-        `Suggestion` you read before running:
+        The panel is the easiest first step. After setup, the programmatic API
+        is equally short:
 
         ```python
-        from mathslate.ai import ask
-        answer = ask("plot the tangent over one period")
-        answer.show()      # read it
-        answer.run()       # only because you typed this
+        ask("plot the tangent over one period").run()
         ```
+
+        The example is shown rather than run automatically, so opening the
+        tour never sends a request or consumes provider quota.
         """
     )
     return
@@ -1084,7 +1081,7 @@ def _(mo):
 
 
 @app.cell
-def _(a, b, dataset, p, plot, sin, symbols, x):
+def _(a, b, dataset, plot, sin, symbols, x):
     p, q, r_sym = symbols("p q r", real=True)
     attempts = [
         ("three free symbols", lambda: plot(p*q*r_sym)),

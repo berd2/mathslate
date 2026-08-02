@@ -1877,6 +1877,19 @@ from mathslate.ai import ask, PROVIDERS
 print([p.name for p in PROVIDERS])
 ```
 
+For notebooks, the guided panel is the easiest starting point:
+
+```python
+from mathslate.ai import assistant
+assistant("plot the tangent over one period")
+```
+
+It selects a provider, links to its API-key page, accepts a masked key, reports
+waiting/success/authentication/quota/timeout/empty-response states, and shows
+the generated code before the separate **Validate & Run** action. On a local
+computer, **Remember on this device** stores the key with the operating-system
+credential manager. JupyterLite deliberately disables persistent key storage.
+
 `mathslate.ai` turns a question into MathSlate code. Three things are true of
 it by construction:
 
@@ -1897,6 +1910,7 @@ it by construction:
 ```text
 ask("plot sine", provider="openai", api_key="sk-...")
 configure(provider="openai", api_key="sk-...")
+configure(provider="gemini", api_key="...", remember=True)
 ```
 
 **An explicit key needs an explicit provider.** A key is a credential for one
@@ -1907,8 +1921,9 @@ rather than guessed at. With exactly one installed there is no ambiguity and it
 is used.
 
 `configure()` treats `None` as "leave as it was", so it cannot clear anything.
-`forget()` is how a key leaves the session, and `configured()` reports what is
-held without ever printing the key:
+`forget()` is how a key leaves the session; `forget(persistent=True)` also
+removes a remembered key from the operating-system credential manager.
+`configured()` reports what is held without ever printing the key:
 
 An explicit session key stays with the provider it was configured for. Changing
 the provider without supplying its matching key never carries the old key

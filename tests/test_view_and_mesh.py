@@ -534,6 +534,28 @@ class TestAutoYFitsTheCurrentXDomain:
         self._buttons(controls)["Fit Y"].click()
         assert y_max.value == pytest.approx(100.0, abs=0.5)
 
+    def test_auto_y_keeps_a_removable_singularity_peak(self, _colab: None) -> None:
+        """A removable hole is bounded data, not a pole to clip away.
+
+        Over a wide interval the ``sin(x)/x`` peak at zero is easy for a
+        percentile-based pole guard to mistake for an outlier.  Fit Y must
+        retain it, otherwise the displayed upper bound wrongly lands near
+        0.5 instead of the function's limiting value of one.
+        """
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        result = plot(sin(x) / x, (x, -40, 40), verbose=False)
+        figure_widget, controls = _unwrap(result.range_controls())
+        _, _, y_min, y_max = _number_controls(controls)
+
+        self._buttons(controls)["Fit Y"].click()
+
+        assert y_min.value < -0.2
+        assert y_max.value > 0.99
+        assert tuple(figure_widget.layout.yaxis.range) == pytest.approx(
+            (y_min.value, y_max.value)
+        )
+
     def test_on_a_log_axis_the_boxes_speak_powers_of_ten(self, _colab: None) -> None:
         """Plotly reads a log axis's range as exponents, and `ylim` already
         follows that there — so seeding the boxes with raw sample values would
@@ -755,6 +777,10 @@ class TestRangeControlsDisplayController:
         ]
 
         assert scale_switch.description == ""
+        assert "flex-flow: row nowrap" in next(
+            widget for widget in controls.children
+            if isinstance(widget, widgets.HTML)
+        ).value
         assert [row.children[0].value for row in rows] == ["Scale", "Mode"]
         assert [len(row.children) for row in action_rows] == [3, 3]
         assert [button.description for row in action_rows for button in row.children] == [

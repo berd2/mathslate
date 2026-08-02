@@ -797,6 +797,18 @@ class PlotResult:
                 f".{_RANGE_CONTROLS_COMPACT_CLASS} .widget-toggle-button {{ "
                 "box-sizing: border-box; min-width: 0 !important; "
                 "padding-left: 3px !important; padding-right: 3px !important; }}"
+                # ipywidgets ToggleButtons uses a wrapping flex row by
+                # default.  Two 72px buttons can therefore split at a theme's
+                # extra border/gap pixel even inside a 148px controller slot.
+                # Segment controls must stay a single compact row.
+                f".{_RANGE_CONTROLS_COMPACT_CLASS}.widget-toggle-buttons {{ "
+                "display: flex !important; flex-flow: row nowrap !important; "
+                "flex-wrap: nowrap !important; }}"
+                f".{_RANGE_CONTROLS_COMPACT_CLASS}.widget-toggle-buttons "
+                "> .widget-toggle-button {{ flex: 1 1 0 !important; "
+                "width: 50% !important; }}"
+                f".{_RANGE_CONTROLS_COMPACT_CLASS}.widget-toggle-buttons "
+                "> .widget-toggle-button:only-child {{ width: 100% !important; }}"
                 "</style>"
             ),
             layout=widgets.Layout(display="none"),
