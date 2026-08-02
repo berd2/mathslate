@@ -17,6 +17,8 @@ curve | x ∈ [-10, 10] | 411 samples | 1 discontinuity handled
   · singularities at x = 0
 ```
 
+![plot-2D](plot-2D.png)
+
 That is the whole first lesson. No `symbols`, no `lambdify`, no `linspace`, no
 `figure`, no `show`. When you are ready for those, ask:
 
@@ -123,6 +125,8 @@ once you're sold.
 plot([sin(x), cos(x)])     # two curves, overlaid
 plot((sin(t), cos(t)))     # one parametric curve
 ```
+
+![plot-3D](plot-3D.png)
 
 Everything else follows the dispatch contract:
 

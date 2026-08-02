@@ -15,6 +15,8 @@ curve | x ∈ [-10, 10] | 411 samples | 1 discontinuity handled
   · singularities at x = 0
 ```
 
+![plot-2D](plot-2D.png)
+
 이것이 첫 번째 레슨의 전부입니다. `symbols`, `lambdify`, `linspace`, `figure`, `show`와 같은 설정은 필요하지 않습니다. 그러한 도구를 사용할 준비가 되었다면, 다음과 같이 요청하세요:
 
 ```python
@@ -104,6 +106,8 @@ await piplite.install("mathslate")
 plot([sin(x), cos(x)])     # 두 곡선을 중첩
 plot((sin(t), cos(t)))     # 하나의 매개변수 곡선
 ```
+
+![plot-3D](plot-3D.png)
 
 그 외의 모든 것은 디스패치 규칙을 따릅니다:
 
