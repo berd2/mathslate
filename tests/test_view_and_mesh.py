@@ -716,6 +716,22 @@ class TestRangeControlsOnA3DSurface:
         z_min.value, z_max.value = 1.0, 3.0
         assert tuple(figure_widget.layout.scene.zaxis.range) == (1.0, 3.0)
 
+    def test_a_space_curve_gets_thickness_but_not_surface_mesh_controls(
+        self, _colab: None
+    ) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        result = plot((cos(t), sin(t), t), (t, 0, 13.5), verbose=False)
+        figure_widget, controls = _unwrap(result.range_controls())
+        thickness, = _widgets(controls, "IntSlider")
+
+        assert not any(
+            toggle.description in {"On", "Off"}
+            for toggle in _widgets(controls, "ToggleButton")
+        )
+        thickness.value = 150
+        assert figure_widget.data[0].line.width == pytest.approx(6.0)
+
     def test_auto_z_on_a_space_curve_keeps_its_actual_y_extent(self, _colab: None) -> None:
         """Auto Z must not redraw a wide space curve through a -1..1 Y window."""
         pytest.importorskip("ipywidgets")

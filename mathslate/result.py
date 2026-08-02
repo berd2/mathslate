@@ -821,6 +821,9 @@ class PlotResult:
         z_scale = "linear"
         thickness_percent = 100
         has_flat_trace_mode = not resamples_y and not has_z
+        # A parametric space curve has a Z axis, but its visible geometry is
+        # still a line whose width can be adjusted like a 2D trace.
+        has_trace_thickness = has_flat_trace_mode or plan.kind == "space"
         has_surface_mesh = plan.kind in {"surface", "psurface"}
         can_log_y = has_flat_trace_mode and _can_use_log_scale(
             series.sample.y for series in plan.series
@@ -832,14 +835,16 @@ class PlotResult:
         syncing = False
 
         def _apply_thickness() -> None:
-            """Scale the standard 2D line and marker sizes by one percentage."""
-            if not has_flat_trace_mode:
+            """Scale trace widths, retaining each plot family's default width."""
+            if not has_trace_thickness:
                 return
             factor = thickness_percent / 100
+            line_width = 4 if plan.kind == "space" else 2
             with figure_widget.batch_update():
                 for trace in figure_widget.data:
-                    trace.line.width = 2 * factor
-                    trace.marker.size = 6 * factor
+                    trace.line.width = line_width * factor
+                    if trace.type == "scatter":
+                        trace.marker.size = 6 * factor
 
         def _apply(fresh: PlotResult) -> None:
             with figure_widget.batch_update():
@@ -1354,7 +1359,7 @@ class PlotResult:
             ])
 
         thickness_controls: list[Any] = []
-        if has_flat_trace_mode:
+        if has_trace_thickness:
             thickness_controls.append(
                 widgets.HBox(
                     [
