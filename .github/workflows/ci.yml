@@ -14,8 +14,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.10", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       # All three notebook hosts, so acceptance criterion 5 really runs.
@@ -30,18 +30,18 @@ jobs:
       # `plot(a*sin(x))` raising on display in every notebook (a figure with
       # frames cannot become a `FigureWidget`). Nothing else in the suite
       # exercises that path end to end.
-      - run: |
-          python -m pytest -q \
-            --deselect tests/test_tour_notebooks.py::TestTheyAreGeneratedAndCurrent \
-            --deselect tests/test_tour_notebooks.py::TestTheMarimoGraphIsSound \
-            --deselect tests/test_tour_notebooks.py::TestItRunsInMarimoToo
+      - run: >-
+          python -m pytest -q
+          --deselect tests/test_tour_notebooks.py::TestTheyAreGeneratedAndCurrent
+          --deselect tests/test_tour_notebooks.py::TestTheMarimoGraphIsSound
+          --deselect tests/test_tour_notebooks.py::TestItRunsInMarimoToo
 
   no_frontend_dependency:
     name: acceptance criterion 6 - no frontend dependency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: install the package exactly as a user would
