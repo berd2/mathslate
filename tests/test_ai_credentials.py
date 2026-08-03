@@ -14,6 +14,7 @@ from typing import Iterator
 
 import pytest
 
+import mathslate.ai.credentials as credentials_module
 import mathslate.ai.suggest as suggest_module
 from mathslate.ai import providers
 from mathslate.ai.suggest import ask, configure, configured, forget
@@ -36,6 +37,9 @@ def installed(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture(autouse=True)
 def _no_ambient_keys(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    # A developer's persisted key is outside this test's scope.  Keep the
+    # test process isolated without deleting the real operating-system secret.
+    monkeypatch.setattr(credentials_module, "load_credential", lambda *_: None)
     for provider in providers.PROVIDERS:
         monkeypatch.delenv(provider.env_var, raising=False)
     forget()

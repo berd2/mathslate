@@ -1,30 +1,45 @@
 name: CI
 
-# Manual-only: CI runs when you ask for it from the Actions tab, not on every
-# push or pull request. Use the "Run workflow" button (GitHub → Actions → CI →
-# Run workflow, choosing the branch), or `gh workflow run CI --ref <branch>`.
-# The button only appears once this file is on the default branch.
-#
-# To restore automatic runs, add back:
-#   push:
-#   pull_request:
+# Fast feedback runs on code changes: one representative Linux/Python pair
+# plus the clean-install acceptance check. The previous four-platform matrix
+# remains available from Actions with the `full_matrix` switch when needed.
 on:
+  push:
+    branches: [master]
+    paths:
+      - "mathslate/**"
+      - "tests/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "mathslate/**"
+      - "tests/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/**"
   workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: "Also run the full Windows/Linux and Python 3.10/3.12 matrix"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
-    name: tests (py${{ matrix.python }}, ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python: ["3.10", "3.12"]
+    name: tests (Python 3.12, Ubuntu)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.12"
       # All three notebook hosts, so acceptance criterion 5 really runs.
       - run: pip install -e ".[dev,jupyter,marimo]" nbclient nbformat ipykernel
       # The marimo tour is maintained separately by its author.  Its expensive
@@ -37,6 +52,27 @@ jobs:
       # `plot(a*sin(x))` raising on display in every notebook (a figure with
       # frames cannot become a `FigureWidget`). Nothing else in the suite
       # exercises that path end to end.
+      - run: >-
+          python -m pytest -q
+          --deselect tests/test_tour_notebooks.py::TestTheyAreGeneratedAndCurrent
+          --deselect tests/test_tour_notebooks.py::TestTheMarimoGraphIsSound
+          --deselect tests/test_tour_notebooks.py::TestItRunsInMarimoToo
+
+  full_matrix:
+    name: full tests (py${{ matrix.python }}, ${{ matrix.os }})
+    if: github.event_name == 'workflow_dispatch' && inputs.full_matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev,jupyter,marimo]" nbclient nbformat ipykernel
       - run: >-
           python -m pytest -q
           --deselect tests/test_tour_notebooks.py::TestTheyAreGeneratedAndCurrent

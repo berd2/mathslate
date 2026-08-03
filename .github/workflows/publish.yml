@@ -10,8 +10,24 @@ permissions:
   contents: read
 
 jobs:
+  verify:
+    name: Release verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,jupyter,marimo]" nbclient nbformat ipykernel
+      - run: >-
+          python -m pytest -q
+          --deselect tests/test_tour_notebooks.py::TestTheyAreGeneratedAndCurrent
+          --deselect tests/test_tour_notebooks.py::TestTheMarimoGraphIsSound
+          --deselect tests/test_tour_notebooks.py::TestItRunsInMarimoToo
+
   build:
     name: Build distribution
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
