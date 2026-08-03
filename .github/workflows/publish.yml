@@ -21,9 +21,10 @@ jobs:
       - run: pip install -e ".[dev,jupyter,marimo]" nbclient nbformat ipykernel
       - run: >-
           python -m pytest -q
-          --deselect tests/test_tour_notebooks.py::TestTheyAreGeneratedAndCurrent
-          --deselect tests/test_tour_notebooks.py::TestTheMarimoGraphIsSound
-          --deselect tests/test_tour_notebooks.py::TestItRunsInMarimoToo
+          tests/test_acceptance.py
+          tests/test_ai_assistant.py
+          tests/test_ai_credentials.py
+          tests/test_ai_explain.py
 
   build:
     name: Build distribution
