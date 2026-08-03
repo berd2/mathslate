@@ -42,6 +42,13 @@ class TestSingleExpressions:
     def test_two_free_symbols_is_a_surface(self) -> None:
         assert plot(x * y, verbose=False).plan.kind == "surface"
 
+    @pytest.mark.parametrize("value", [sp.I, 2 + 3 * sp.I, sp.zoo])
+    def test_a_non_real_constant_is_explained_not_crashed(self, value: sp.Expr) -> None:
+        """`float(sp.N(I))` raised a raw TypeError two frames down; a constant
+        with no real value gets a plot-shaped message instead."""
+        with pytest.raises(UnsupportedInputError, match="not a real number"):
+            plot(value, verbose=False)
+
     def test_a_string_is_sympified(self) -> None:
         assert plot("sin(x)/x", verbose=False).plan.kind == "curve"
 

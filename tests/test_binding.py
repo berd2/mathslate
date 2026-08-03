@@ -68,10 +68,19 @@ class TestRanges:
         assert plan.param_range == pytest.approx((0.0, 6.283185307179586))
 
     def test_malformed_ranges_are_explained(self) -> None:
+        # The exception *types* are the documented contract (manual §4.1): a
+        # mis-shaped range is a programming mistake, not a MathSlateError. The
+        # messages, though, must say what was actually wrong.
         with pytest.raises(TypeError, match=r"\(symbol, lo, hi\)"):
             binding.parse_range((x, 1.0))
         with pytest.raises(ValueError, match="empty"):
             binding.parse_range((x, 1.0, 1.0))
+        with pytest.raises(ValueError, match="finite"):
+            binding.parse_range((x, float("nan"), 1.0))
+        with pytest.raises(ValueError, match="finite"):
+            binding.parse_range((x, 0.0, float("inf")))
+        with pytest.raises(ValueError, match="must be numbers"):
+            binding.parse_range((x, "a", "b"))
 
     def test_a_constant_still_gets_an_axis(self) -> None:
         chosen = binding.choose_symbols([sp.Integer(4)], 1)

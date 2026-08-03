@@ -11,6 +11,7 @@ Resolution order, in full:
 
 from __future__ import annotations
 
+import math
 from typing import Final, Iterable, Sequence
 
 import sympy as sp
@@ -159,15 +160,37 @@ def check_ranges(exprs: Sequence[sp.Expr], explicit: Sequence[RangeSpec]) -> Non
 
 
 def parse_range(spec: object) -> RangeSpec:
-    """Accept ``(symbol, lo, hi)`` and normalise it."""
+    """Accept ``(symbol, lo, hi)`` and normalise it.
+
+    The exception *types* here are deliberate and documented (docs/manual §4.1):
+    a mis-shaped range is a programming mistake and raises the ordinary Python
+    ``TypeError``/``ValueError``, not a :class:`MathSlateError`, which is
+    reserved for a genuinely mathematical problem. The messages, though, are
+    written to say what was actually wrong — a ``nan`` bound is not "empty", and
+    a non-numeric bound should not surface as ``float()``'s "could not convert
+    string to float" from a frame the caller never sees.
+    """
     if not (isinstance(spec, (tuple, list)) and len(spec) == 3):
         raise TypeError(f"a range must be written (symbol, lo, hi); got {spec!r}")
     symbol, lo, hi = spec
     if not isinstance(symbol, sp.Symbol):
         raise TypeError(f"the first item of a range must be a symbol; got {symbol!r}")
-    low, high = float(lo), float(hi)
+    try:
+        low, high = float(lo), float(hi)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"a range's bounds must be numbers, e.g. ({symbol}, -10, 10); "
+            f"got ({lo!r}, {hi!r})"
+        ) from error
+    if not (math.isfinite(low) and math.isfinite(high)):
+        raise ValueError(
+            f"a range needs finite bounds; got ({symbol}, {low}, {high}). "
+            "Use xlim/ylim for an infinite-looking view of a finite domain."
+        )
     if not high > low:
-        raise ValueError(f"range for {symbol} is empty: ({low}, {high})")
+        raise ValueError(
+            f"range for {symbol} is empty: ({low}, {high}) — needs low < high"
+        )
     return (symbol, low, high)
 
 
