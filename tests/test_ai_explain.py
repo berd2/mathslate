@@ -133,6 +133,46 @@ class TestTheEvidenceHandedToTheModel:
         redacted = _redact('api_key="abc,def-secret-value"')
         assert "def-secret-value" not in redacted
 
+    def test_it_redacts_a_credential_whose_name_ends_in_key_or_token(self) -> None:
+        """`STRIPE_SECRET_KEY`, `AWS_SECRET_ACCESS_KEY`: the keyword `secret`
+        is in there, but it is followed by `_KEY`, not `=` — the check right
+        after the keyword that keeps `password_hash` from matching also kept
+        these from matching, for a reason that does not apply to them.
+        `GITHUB_TOKEN` has no `access_` prefix at all. Bare `key`/`token`
+        catch the case these are actually written."""
+        assert "sk_live_51AbCdEfGhIjKlMnOpQr" not in _redact(
+            'STRIPE_SECRET_KEY = "sk_live_51AbCdEfGhIjKlMnOpQr"'
+        )
+        assert "wJalrXUtnFEMI" not in _redact(
+            'AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/bPxRfiCYEXAMPLEKEY"'
+        )
+        assert "ghp_1234567890" not in _redact(
+            'GITHUB_TOKEN = "ghp_1234567890abcdefghijklmnop"'
+        )
+
+    def test_it_does_not_flag_a_bare_loop_or_iteration_variable_named_key(
+        self,
+    ) -> None:
+        """Widening to bare `key`/`token` must not turn `for key in
+        d.items():` — one of the most common idioms in the language — into a
+        redaction target. It doesn't, because nothing here is immediately
+        followed by an assignment operator, which every match still requires."""
+        assert _redact("for key in d.items():") == "for key in d.items():"
+        assert (
+            _redact("for key, value in d.items():")
+            == "for key, value in d.items():"
+        )
+
+    def test_an_escaped_quote_inside_the_value_does_not_end_the_match_early(
+        self,
+    ) -> None:
+        """The value was matched up to the first literal quote character,
+        which does not distinguish one escaped by a backslash from the
+        string's real end — so a value containing `\\"` leaked everything
+        from there to its actual closing quote."""
+        redacted = _redact('api_key="first\\"still-secret"')
+        assert "still-secret" not in redacted
+
     def test_an_unrelated_error_is_labelled_as_not_mathslates(self) -> None:
         report = _report(_raised(lambda: 1 / 0), None)
         assert "not from MathSlate's own checks" in report
