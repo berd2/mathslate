@@ -36,6 +36,7 @@ from .providers import (
     resolve_provider,
 )
 from .explain import explain, install_hint
+from .tools import TOOLS, Tool, call, tool_names, tool_schemas
 from .suggest import (
     RunResult,
     Suggestion,
@@ -67,4 +68,9 @@ __all__ = [
     "resolve_provider",
     "system_prompt",
     "contract_reference",
+    "TOOLS",
+    "Tool",
+    "call",
+    "tool_names",
+    "tool_schemas",
 ]
