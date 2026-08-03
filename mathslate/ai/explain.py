@@ -46,9 +46,26 @@ _MAX_FRAMES: int = 12
 # Common credential shapes and assignments are removed before evidence leaves
 # the machine. This is deliberately conservative: traceback source lines are
 # useful for a repair, but a line assigning a key or token is not.
+#
+# No leading `\b`: real credentials are named `OPENAI_API_KEY`,
+# `db_password`, `STRIPE_SECRET_KEY` — a snake_case prefix joined by `_`,
+# which is a word character, so a boundary there never matches and the
+# keyword was never reached. The assignment operator required immediately
+# after (module an optional closing quote) is what keeps this from firing
+# on an unrelated word like `password_hash` — `_hash` is what follows
+# there, not `[:=]`, so the match fails at that position regardless.
+#
+# The value itself is matched as a quoted literal to *its own* closing quote
+# — non-greedy, so a comma inside the string cannot end the match early and
+# leak everything after it — or, unquoted, up to the first character that
+# ends a Python expression: whitespace, a comma, a semicolon, or a closing
+# bracket. That last group is why this used to eat the surrounding code's
+# own closing parenthesis: `Anthropic(api_key=os.environ['X'])` lost its
+# `)` because `[^\s,;]+` does not stop for one.
 _SECRET_VALUE = re.compile(
-    r"(?i)\b(api[_-]?key|access[_-]?token|password|secret)\b"
-    r"(\s*[:=]\s*)([^\s,;]+)"
+    r"(?i)(api[_-]?key|access[_-]?token|password|secret)"
+    r"(['\"]?\s*[:=]\s*)"
+    r"(?:'[^']*'|\"[^\"]*\"|[^\s,;)\]}]+)"
 )
 _PROVIDER_KEY = re.compile(r"\b(?:sk-(?:ant-)?|AIza)[A-Za-z0-9_-]{8,}\b")
 _BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*\b")

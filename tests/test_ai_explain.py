@@ -9,7 +9,7 @@ import pytest
 
 from mathslate import plot, sin, x
 from mathslate.ai import explain
-from mathslate.ai.explain import _raised_by_mathslate, _report
+from mathslate.ai.explain import _raised_by_mathslate, _redact, _report
 from mathslate.ai.providers import Provider
 from mathslate.errors import UnsupportedInputError
 
@@ -91,6 +91,47 @@ class TestTheEvidenceHandedToTheModel:
 
         assert "this-must-not-leave-the-machine" not in report
         assert "api_key=[hidden]" in report
+
+    def test_it_redacts_a_credential_named_like_an_environment_variable(self) -> None:
+        """`OPENAI_API_KEY`, `db_password`: a real credential's name is almost
+        never the bare word alone, it is that word joined to a prefix by `_` —
+        and `_` is a word character, so a naive `\\b` in front of the keyword
+        never reaches it. Every one of these leaked in full before this was
+        fixed to look for the keyword as a substring instead."""
+        assert "hunter2CorrectHorse" not in _redact(
+            'DATABASE_PASSWORD = "hunter2CorrectHorse"'
+        )
+        assert "my-signing-secret-value" not in _redact(
+            'JWT_SECRET = "my-signing-secret-value"'
+        )
+        assert "sk-abcdef1234567890" not in _redact(
+            "OPENAI_API_KEY=sk-abcdef1234567890"
+        )
+
+    def test_it_does_not_flag_an_unrelated_word_sharing_the_suffix(self) -> None:
+        """`password_hash`, `passwordless_login`: dropping the boundary check
+        to reach the cases above must not make every word starting with one
+        of the four keywords a redaction target — only one immediately
+        followed by an assignment is."""
+        assert _redact("passwordless_login = True") == "passwordless_login = True"
+        assert _redact("password_hash = compute(x)") == "password_hash = compute(x)"
+
+    def test_it_does_not_swallow_the_code_around_the_credential(self) -> None:
+        """`Anthropic(api_key=os.environ['X'])`: the value used to be matched
+        by "everything that isn't a comma or space", which does not stop at a
+        closing bracket either — so the redaction ate the call's own closing
+        parenthesis along with the value, corrupting the line."""
+        redacted = _redact("results.append(Anthropic(api_key=api_key)); log('done')")
+        assert redacted.count("(") == redacted.count(")")
+        assert "log('done')" in redacted
+
+    def test_it_does_not_leak_the_remainder_of_a_value_containing_a_comma(
+        self,
+    ) -> None:
+        """The value was matched up to the first comma even inside a quoted
+        string, so a credential containing one leaked everything after it."""
+        redacted = _redact('api_key="abc,def-secret-value"')
+        assert "def-secret-value" not in redacted
 
     def test_an_unrelated_error_is_labelled_as_not_mathslates(self) -> None:
         report = _report(_raised(lambda: 1 / 0), None)
