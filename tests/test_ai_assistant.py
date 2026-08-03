@@ -245,3 +245,71 @@ def test_jupyterlite_disables_persistent_credentials(
 
     assert panel.remember.disabled is True
     assert panel.remember.value is False
+
+
+def test_local_panel_keeps_remember_selectable_when_keyring_is_initially_missing(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("ipywidgets")
+    import mathslate.ai.ui as ui
+
+    monkeypatch.setattr(ui.sys, "platform", "win32")
+    monkeypatch.setattr(ui, "credential_store_available", lambda: False)
+    monkeypatch.setattr(ui, "load_credential", lambda provider=None: None)
+    panel = ui.assistant()
+
+    assert panel.remember.disabled is False
+    assert panel.remember.value is False
+    panel.remember.value = True
+    assert panel.remember.value is True
+
+
+def test_storage_failure_does_not_cancel_ask_or_connection_check(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("ipywidgets")
+    import mathslate.ai.ui as ui
+
+    calls: list[bool] = []
+
+    def configure_for_session_then_fail_to_save(**kwargs: Any) -> None:
+        remember = bool(kwargs["remember"])
+        calls.append(remember)
+        if remember:
+            raise UnsupportedInputError("secure credential storage is unavailable")
+
+    monkeypatch.setattr(Provider, "installed", lambda self: True)
+    monkeypatch.setattr(Provider, "configured", lambda self: False)
+    monkeypatch.setattr(ui, "credential_store_available", lambda: False)
+    monkeypatch.setattr(ui, "load_credential", lambda provider=None: None)
+    monkeypatch.setattr(ui, "configure", configure_for_session_then_fail_to_save)
+    monkeypatch.setattr(
+        ui,
+        "ask",
+        lambda *args, **kwargs: Suggestion(
+            "plot(sin(x))", "plot sine", "gemini", "test-model"
+        ),
+    )
+    monkeypatch.setattr(
+        ui,
+        "check_connection",
+        lambda **kwargs: "Gemini connection is working (test-model).",
+    )
+    panel = ui.assistant("plot sine")
+    panel.remember.value = True
+
+    panel.api_key.value = "private-key"
+    panel.ask_button.click()
+
+    assert panel.suggestion is not None
+    assert "Received code" in panel.status.value
+    assert "active for this session but was not saved" in panel.status.value
+    assert panel.api_key.value == ""
+
+    panel.api_key.value = "private-key"
+    panel.check_button.click()
+
+    assert "connection is working" in panel.status.value
+    assert "active for this session but was not saved" in panel.status.value
+    assert panel.api_key.value == ""
+    assert calls == [False, True, False, True]

@@ -182,7 +182,13 @@ class TestCriterion6NoFrontendDependency:
         for frontend in ("marimo", "ipywidgets", "jupyter", "notebook"):
             assert frontend not in declared
         extras = config["project"]["optional-dependencies"]
-        assert "marimo" in extras and "jupyter" in extras
+        assert "marimo" in extras and "jupyter" in extras and "starter" in extras
+        starter = " ".join(extras["starter"]).lower()
+        for package in (
+            "ipywidgets", "anywidget", "google-genai", "keyring",
+            "jupyterlab", "ipykernel",
+        ):
+            assert package in starter
 
     def test_importing_mathslate_imports_no_frontend(self) -> None:
         """Checked in a clean interpreter.

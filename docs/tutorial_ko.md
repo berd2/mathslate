@@ -17,8 +17,15 @@ pip install mathslate
 노트북 환경과 관련된 패키지는 함께 제공되지 않습니다. Jupyter나 Colab에서 사용하고 싶다면 다음을 실행하세요:
 
 ```bash
-pip install "mathslate[jupyter]"
+pip install "mathslate[starter]"
 ```
+
+이 한 줄로 Jupyter Lab, 대화형 그래프 컨트롤에 필요한 `ipywidgets`와
+`anywidget`, Gemini assistant의 `google-genai`, API key를 기기에 기억하는
+`keyring`까지 설치됩니다. 개별 패키지를 따로 설치하거나 import할 필요가
+없습니다. 저장소에서 시작한다면 Windows는 `scripts/quickstart.ps1`,
+macOS/Linux는 `scripts/quickstart.sh`를 실행하면 같은 설정을 자동으로
+만들고 Jupyter Lab을 엽니다.
 
 ---
 

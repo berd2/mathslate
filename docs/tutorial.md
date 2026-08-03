@@ -17,12 +17,17 @@ If you want the exhaustive description of every option instead, that is the
 pip install mathslate
 ```
 
-Nothing notebook-specific comes with it. If you are in Jupyter or Colab and
-want it there too:
+For a local Jupyter learning setup with interactive graph controls, the Gemini
+assistant and remembered API keys, install the complete set once:
 
 ```bash
-pip install "mathslate[jupyter]"
+pip install "mathslate[starter]"
 ```
+
+This brings in `ipywidgets`, `anywidget`, `google-genai` and `keyring`; you do
+not install or import those packages separately. From a checkout, the matching
+one-shot setup scripts are `scripts/quickstart.ps1` on Windows and
+`scripts/quickstart.sh` on macOS/Linux.
 
 ---
 

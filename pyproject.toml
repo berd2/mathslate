@@ -40,6 +40,19 @@ marimo = ["marimo>=0.9"]
 ai = ["anthropic>=0.40", "keyring>=24.0"]
 ai-openai = ["openai>=1.50", "keyring>=24.0"]
 ai-gemini = ["google-genai>=1.0", "keyring>=24.0"]
+# The one-command path for a learner's local notebook: Jupyter Lab itself,
+# every widget MathSlate uses, the approachable Gemini provider, and the OS
+# credential integration for its Remember checkbox. Keeping this here (rather
+# than as a hand-maintained script list) makes the quickstart and `pip install`
+# path install the same complete environment.
+starter = [
+    "ipywidgets>=8.0",
+    "anywidget>=0.9",
+    "google-genai>=1.0",
+    "keyring>=24.0",
+    "jupyterlab>=4.0",
+    "ipykernel>=6.0",
+]
 # `tomli` backports the standard-library `tomllib` (added in 3.11) so the test
 # suite reads pyproject.toml on the 3.10 floor named in `requires-python`.
 dev = ["pytest>=8.0", "tomli>=2.0; python_version < '3.11'"]

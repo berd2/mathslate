@@ -41,18 +41,29 @@ Pick whichever of these three matches you.
 pip install mathslate
 ```
 
-Nothing frontend-specific comes with it. Add what your notebook needs:
+Nothing frontend-specific comes with it. If you already have Jupyter and only
+need plotting controls, add its notebook extra:
 
 ```bash
 pip install "mathslate[jupyter]"   # pulls in ipywidgets + anywidget
 pip install "mathslate[marimo]"
 ```
 
+For the complete local learning setup — Jupyter Lab, interactive graph
+controls, Gemini assistant, and secure API-key storage — use this one command:
+
+```bash
+pip install "mathslate[starter]"
+```
+
+`anywidget`, `keyring`, and the Gemini SDK are installed by the extras; there
+is no need to find or install them one by one.
+
 ### 2. New to Python, or you'd rather not fiddle
 
-One command — installs [uv](https://docs.astral.sh/uv/) first if you don't
-have it, then creates the environment, installs mathslate, writes a starter
-notebook with the import already in it, and opens Jupyter Lab on it:
+From a checkout, after installing [uv](https://docs.astral.sh/uv/) once, one script creates an
+isolated environment, installs Jupyter Lab, interactive controls, Gemini AI
+and secure key storage, writes a starter notebook, and opens Jupyter Lab:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh   # skip if `uv --version` already works
@@ -69,7 +80,7 @@ or adapt it:
 
 ```bash
 uv venv .venv-mathslate
-uv pip install --python .venv-mathslate "mathslate[jupyter]"   # ipywidgets + anywidget come with it
+uv pip install --python .venv-mathslate ".[starter]"
 .venv-mathslate/bin/python -m jupyter lab
 ```
 
@@ -85,7 +96,10 @@ from mathslate import *
 
 That single import is *the whole setup* — `plot`, `analyze`, `sin`, `x` and
 everything else in this README come from it. `ipywidgets`/`anywidget` are
-never imported directly; mathslate uses them internally for `slider()`.
+never imported directly; MathSlate uses them internally for `slider()` and
+range controls. The quickstart setup installs the Gemini assistant and secure
+key storage too, so no further package installation is needed before calling
+`assistant()`.
 
 Swap the extra for `marimo` and the last line for `-m marimo edit` to use
 marimo instead.

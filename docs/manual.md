@@ -49,9 +49,23 @@ Optional extras:
 
 | Extra | Installs | For |
 |---|---|---|
-| `mathslate[jupyter]` | `ipywidgets` | Jupyter and Colab widgets (v0.5) |
+| `mathslate[jupyter]` | `ipywidgets`, `anywidget` | Jupyter and Colab widgets |
 | `mathslate[marimo]` | `marimo` | marimo reactive widgets (v0.5) |
+| `mathslate[ai-gemini]` | `google-genai`, `keyring` | Gemini assistant and remembered local API keys |
+| `mathslate[starter]` | Jupyter Lab, notebook widgets, Gemini and `keyring` | complete local learning setup |
 | `mathslate[dev]` | `pytest` | running the test suite |
+
+For a first local Jupyter setup, install everything needed for interactive
+plots, the Gemini assistant, and persistent local keys in one command:
+
+```bash
+pip install "mathslate[starter]"
+```
+
+The repository's `scripts/quickstart.ps1` (Windows) and
+`scripts/quickstart.sh` (macOS/Linux) create an isolated environment, run this
+installation, write a starter notebook and open Jupyter Lab. `anywidget` and
+`keyring` are included automatically; users never import them directly.
 
 ```python
 import mathslate

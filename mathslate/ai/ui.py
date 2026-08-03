@@ -96,11 +96,19 @@ def assistant(question: str = "", *, about: object | None = None) -> AssistantPa
 
     provider_box = widgets.Dropdown(options=names, value=initial, description="Provider")
     key_box = widgets.Password(description="API key", placeholder="Paste the provider API key")
-    local_persistence = sys.platform != "emscripten" and credential_store_available()
+    is_jupyterlite = sys.platform == "emscripten"
+    local_persistence = not is_jupyterlite and credential_store_available()
     remember_box = widgets.Checkbox(
         value=local_persistence,
         description="Remember on this device",
-        disabled=not local_persistence,
+        # A local kernel may gain `keyring` after `%pip install keyring` while
+        # this panel is already displayed.  Freezing the control in a disabled
+        # state made it impossible to opt in without rebuilding the whole
+        # panel, and looked like a broken checkbox.  Let local users choose;
+        # save_credential() will still refuse with an actionable message if the
+        # OS store is unavailable. JupyterLite has no OS credential service at
+        # all, so only that environment is permanently disabled.
+        disabled=is_jupyterlite,
         indent=False,
     )
     model_box = widgets.Text(
@@ -172,6 +180,31 @@ def assistant(question: str = "", *, about: object | None = None) -> AssistantPa
         else:
             set_status("Paste an API key, then Ask or Check connection.")
 
+    def configure_secret(chosen: Provider, secret: str) -> str | None:
+        """Activate a pasted key now, then try to persist it if requested.
+
+        Secure storage is a convenience, not a prerequisite for asking a
+        question.  Configure the session first so a keyring failure cannot
+        cancel the provider request; report that failure as a warning while
+        keeping the key active in memory for this kernel.
+        """
+        settings = {
+            "provider": chosen.name,
+            "model": model_box.value.strip() or None,
+            "api_key": secret,
+        }
+        configure(**settings, remember=False)
+        if not remember_box.value:
+            return None
+        try:
+            configure(**settings, remember=True)
+        except MathSlateError as exc:
+            return (
+                "The API key is active for this session but was not saved: "
+                f"{_safe_error(exc, secret)}"
+            )
+        return None
+
     def submit(_button: Any) -> None:
         chosen = _provider(provider_box.value)
         secret = key_box.value.strip()
@@ -186,13 +219,9 @@ def assistant(question: str = "", *, about: object | None = None) -> AssistantPa
         run_button.disabled = True
         set_status(f"Waiting for {chosen.name.title()}…", "wait")
         try:
+            save_warning = None
             if secret:
-                configure(
-                    provider=chosen.name,
-                    model=model_box.value.strip() or None,
-                    api_key=secret,
-                    remember=remember_box.value,
-                )
+                save_warning = configure_secret(chosen, secret)
                 key_box.value = ""
             result = ask(
                 prompt,
@@ -203,7 +232,11 @@ def assistant(question: str = "", *, about: object | None = None) -> AssistantPa
             panel.suggestion = result
             code.value = result.code
             run_button.disabled = False
-            set_status(f"Received code from {result.provider} · {result.model}.", "ok")
+            received = f"Received code from {result.provider} · {result.model}."
+            set_status(
+                f"{received} {save_warning}" if save_warning else received,
+                "wait" if save_warning else "ok",
+            )
         except Exception as exc:
             panel.suggestion = None
             code.value = ""
@@ -221,19 +254,18 @@ def assistant(question: str = "", *, about: object | None = None) -> AssistantPa
         check_button.disabled = True
         set_status(f"Checking {chosen.name.title()} connection...", "wait")
         try:
+            save_warning = None
             if secret:
-                configure(
-                    provider=chosen.name,
-                    model=model_box.value.strip() or None,
-                    api_key=secret,
-                    remember=remember_box.value,
-                )
+                save_warning = configure_secret(chosen, secret)
             message = check_connection(
                 provider=chosen.name,
                 model=model_box.value.strip() or None,
             )
             key_box.value = ""
-            set_status(message, "ok")
+            set_status(
+                f"{message} {save_warning}" if save_warning else message,
+                "wait" if save_warning else "ok",
+            )
         except Exception as exc:
             set_status(_safe_error(exc, secret), "error")
         finally:
@@ -290,8 +322,9 @@ def assistant(question: str = "", *, about: object | None = None) -> AssistantPa
         )
     elif not local_persistence:
         persistence_message = (
-            "Secure storage is unavailable, so Remember is disabled. Run "
-            "`%pip install keyring` in this notebook, then restart its kernel."
+            "Secure storage is not ready yet. Run `%pip install keyring`, then "
+            "select Remember and retry. Restart the kernel only if its OS "
+            "credential backend is still not detected."
         )
     else:
         persistence_message = (

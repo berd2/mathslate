@@ -1,6 +1,7 @@
 # One-shot setup for people new to Python: creates an isolated environment,
-# installs mathslate with the Jupyter extra, writes a starter notebook with
-# the import already in it, and opens it.
+# installs MathSlate's complete beginner setup (Jupyter Lab, interactive
+# controls, Gemini assistant and secure key storage), writes a starter
+# notebook with the import already in it, and opens it.
 $ErrorActionPreference = "Stop"
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
@@ -17,7 +18,10 @@ $python = Join-Path $envDir "Scripts\python.exe"
 if (-not (Test-Path $envDir)) {
     uv venv $envDir
 }
-uv pip install --python $python "mathslate[jupyter]"
+Write-Host "Installing MathSlate, Jupyter Lab, interactive controls, Gemini AI, and secure key storage..."
+# Install this checkout rather than an older PyPI release: the script lives in
+# the repository and is intended to make that exact version ready to use.
+uv pip install --python $python ".[starter]"
 
 $notebook = "mathslate_quickstart.ipynb"
 if (-not (Test-Path $notebook)) {
@@ -49,6 +53,16 @@ if (-not (Test-Path $notebook)) {
    "outputs": [],
    "source": [
     "plot(sin(x)/x)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from mathslate.ai import assistant\n",
+    "assistant()  # paste a Gemini API key in the panel"
    ]
   }
  ],
