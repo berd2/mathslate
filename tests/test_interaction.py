@@ -133,6 +133,20 @@ class TestTheFrames:
         assert not plot(sin(x), verbose=False).interactive
         assert not plot(sin(x), verbose=False).plotly.frames
 
+    def test_frame_names_are_unique_so_a_narrow_range_still_animates(self) -> None:
+        """The slider's display label rounds for reading, so a range from 1.0 to
+        1.0002 shows "1" at every position. If the frame name were that rounded
+        label too, every step would animate to the first frame and the plot would
+        freeze while the slider moved. Names are the unique frame index; only the
+        label is the rounded value, and every step targets its own frame."""
+        a = slider(1.0, 1.0002, name="tiny")
+        figure = plot(a * sin(x), verbose=False).plotly
+        names = [frame.name for frame in figure.frames]
+        assert len(names) == len(set(names)) == DEFAULT_STEPS
+        step_targets = [step["args"][0][0] for step in figure.layout.sliders[0].steps]
+        assert step_targets == names  # step i drives frame i
+        assert all(target in set(names) for target in step_targets)
+
 
 class TestAnimate:
     def test_it_adds_a_play_button(self) -> None:

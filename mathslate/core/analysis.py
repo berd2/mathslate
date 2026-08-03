@@ -651,7 +651,18 @@ def _solve_exactly(
         ordered = sorted(solution.args, key=lambda e: _to_float(e) or 0.0)
         inside = [e for e in ordered if (f := _to_float(e)) is not None and lo <= f <= hi]
         if len(inside) == len(values):
-            symbolic = tuple(sp.nsimplify(e) for e in inside)
+            # A FiniteSet from `solveset` already holds the *exact* roots
+            # (`-159*pi/500`, `sqrt(2)`), so `nsimplify` is only for the rare
+            # element that came back as a Float and needs an exact form guessed.
+            # Running it on an already-exact expression is both the slow path —
+            # `sin(1000*x)` has ~640 roots and `nsimplify` on each summed to tens
+            # of seconds across roots/extrema/inflections — and a *wrong* one:
+            # `nsimplify` re-derives from the float and can return a different
+            # closed form that merely approximates it, turning `-57*pi/200` into
+            # a spurious product of prime powers. Touch only the Float elements.
+            symbolic = tuple(
+                sp.nsimplify(e) if e.has(sp.Float) else e for e in inside
+            )
     return values, symbolic
 
 

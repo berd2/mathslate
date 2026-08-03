@@ -86,11 +86,15 @@ def generate_frames_code(
     ]
     body += [
         "",
-        "for position, item in zip(positions, payload['frames']):",
+        "# A frame's name is its unique animation id (the index); the position",
+        "# is only the label shown on the slider. They must differ: a narrow",
+        "# range formats every position to the same string, and reusing that as",
+        "# the name would make every step animate to the first frame.",
+        "for index, item in enumerate(payload['frames']):",
         "    frames.append({",
         "        'data': item['data'],",
         "        'layout': item.get('layout') or None,",
-        "        'name': f'{position:g}',",
+        "        'name': str(index),",
         "    })",
         "",
         "fig = go.Figure(data=payload['frames'][0]['data'],",
@@ -102,10 +106,10 @@ def generate_frames_code(
         "        'pad': {'t': 40},",
         "        'steps': [",
         "            {'label': f'{p:g}', 'method': 'animate',",
-        "             'args': [[f'{p:g}'], {'mode': 'immediate',",
-        "                                   'frame': {'duration': 300, 'redraw': False},",
-        "                                   'transition': {'duration': 0}}]}",
-        "            for p in positions",
+        "             'args': [[str(i)], {'mode': 'immediate',",
+        "                                 'frame': {'duration': 300, 'redraw': False},",
+        "                                 'transition': {'duration': 0}}]}",
+        "            for i, p in enumerate(positions)",
         "        ],",
         "    }],",
         ")",
@@ -134,7 +138,9 @@ def _frames_payload(
     base = plotly_backend.figure_from_plan(plans[0], options)
     frames: list[dict[str, object]] = []
     for index, plan in enumerate(plans):
-        frame = plotly_backend._frame_from_plan(plan, float(index), options)
+        frame = plotly_backend._frame_from_plan(
+            plan, options, name=plotly_backend._frame_name(index)
+        )
         item: dict[str, object] = {
             "data": [trace.to_plotly_json() for trace in frame.data],
         }

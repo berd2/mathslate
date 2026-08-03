@@ -374,8 +374,8 @@ def figure_with_frames(
 
     figure = figure_from_plan(plans[0], options)
     figure.frames = [
-        _frame_from_plan(plan, value, options)
-        for plan, value in zip(plans, steps)
+        _frame_from_plan(plan, options, name=_frame_name(index))
+        for index, plan in enumerate(plans)
     ]
 
     controls: list[dict[str, object]] = [
@@ -385,11 +385,18 @@ def figure_with_frames(
             "pad": {"t": 40},
             "steps": [
                 {
+                    # The label is what the reader sees; the animate target is
+                    # the frame's own name. They must not be the same string:
+                    # `_step_name` rounds for display, so a slider over a narrow
+                    # range (1.0 to 1.0002) rounds every position to "1", and if
+                    # that were also the frame name every step would animate to
+                    # the first frame — the slider would move and the plot would
+                    # not. The index is unique per frame; the value is only shown.
                     "label": _step_name(value),
                     "method": "animate",
-                    "args": [[_step_name(value)], _TRANSITION],
+                    "args": [[_frame_name(index)], _TRANSITION],
                 }
-                for value in steps
+                for index, value in enumerate(steps)
             ],
         }
     ]
@@ -405,8 +412,13 @@ def figure_with_frames(
     return figure
 
 
+def _frame_name(index: int) -> str:
+    """A frame's animation id — unique per frame, unlike its display label."""
+    return str(index)
+
+
 def _frame_from_plan(
-    plan: PlotPlan, value: float, options: RenderOptions
+    plan: PlotPlan, options: RenderOptions, *, name: str
 ) -> go.Frame:
     """A frame with the same trace kinds and count as the plan's real figure.
 
@@ -439,7 +451,7 @@ def _frame_from_plan(
     return go.Frame(
         data=data,
         layout=frame_layout,
-        name=_step_name(value),
+        name=name,
     )
 
 

@@ -1,8 +1,15 @@
 name: CI
 
+# Manual-only: CI runs when you ask for it from the Actions tab, not on every
+# push or pull request. Use the "Run workflow" button (GitHub → Actions → CI →
+# Run workflow, choosing the branch), or `gh workflow run CI --ref <branch>`.
+# The button only appears once this file is on the default branch.
+#
+# To restore automatic runs, add back:
+#   push:
+#   pull_request:
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   test:

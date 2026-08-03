@@ -82,6 +82,17 @@ class TestStep4LineBreaking:
         assert len(jump.breakpoints) == 1
         assert jump.breakpoints[0] == pytest.approx(0.0, abs=1e-6)
 
+    def test_a_numerically_constant_curve_is_not_shattered_by_ulp_noise(self) -> None:
+        """`sin(x)**2 + cos(x)**2` is 1 everywhere, but floating-point evaluation
+        wobbles at ~1e-16. Without a magnitude-relative jump threshold that noise
+        collapsed the threshold and was bisected into ~180 phantom breaks,
+        fragmenting a line that should be solid."""
+        result = sampling.sample_expression(sin(x) ** 2 + cos(x) ** 2, x, (-3.0, 3.0))
+        assert result.breakpoints == ()
+        assert not np.isnan(result.y).any()
+        finite = result.y[np.isfinite(result.y)]
+        assert np.allclose(finite, 1.0)
+
 
 class TestStep5YClipping:
     def test_a_pole_triggers_clipping(self) -> None:
