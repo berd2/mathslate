@@ -1578,6 +1578,95 @@ print(len(system_prompt()) < 4000)
 
 프롬프트는 실제 디스패치 규칙에서 생성되므로, 어시스턴트가 플롯의 새로운 종류를 모른 채로 놔두는 커밋은 불가능합니다. 프롬프트가 짧은 이유는 API가 작기 때문입니다 — 그리고 이것이 API를 작게 유지하려는(PRD 목표 5) 가장 강력한 근거이기도 합니다.
 
+#### 13.5.1 코드 말고 다른 것을 묻기
+
+`ask()`는 여러분이 읽을 코드를 씁니다. 모듈의 나머지는 한 가지 기준으로 나뉩니다. 모델에게 **만들어 달라**고 해서 여러분이 검토해야 하는 것인지, 아니면 MathSlate가 **이미 계산해 둔 것을 읽어 달라**고 하는 것인지입니다. 후자가 더 안전한 일이며, 아래 대부분이 그쪽에 속합니다.
+
+**`explain()` — 무엇이 잘못됐고, 어떻게 고치는지.** 초보자의 첫 실수는 대개 모양(shape) 실수이고, MathSlate는 이미 그것을 정확히 지적합니다. 빠진 것은 그 문단을 다시 코드로 옮기는 단계뿐입니다.
+
+```text
+plot(sin(x), 0, 6.28)
+# TypeError: a range must be written (symbol, lo, hi); got 0
+
+from mathslate.ai import explain
+explain()
+```
+
+인자 없이 부르면 파이썬이 방금 보고한 예외를 읽으므로, 실패한 셀 다음에는 그냥 `explain()`이면 됩니다. 잡아 둔 예외를 넘기거나, `code=`로 실행하지 않고 코드만 검토하게 할 수도 있습니다.
+
+근거가 되는 것은 모델이 기억하는 MathSlate가 아니라 **에러 메시지 자체**입니다. MathSlate가 낸 에러라면 그 메시지가 권위를 가지므로 모델은 그것을 고친 코드로 옮기기만 하면 됩니다. 그렇지 않은 경우 — `solve(x**2 - 4 = 0)`의 `SyntaxError`, SymPy 내부의 `TypeError` — 모델은 일반적인 파이썬 지식으로 추론하는 것이므로 그렇다고 말하도록 요구됩니다. 어느 쪽인지는 예외의 클래스가 아니라 **어느 프레임이 던졌는지**로 판단합니다. 모양이 잘못된 범위는 의도적으로 평범한 `TypeError`를 던지며(§4.1), 그것이 바로 이 기능이 존재하는 이유이기 때문입니다.
+
+**`describe()` — 그 답이 무슨 뜻인지.** 근은 이미 풀렸고 불연속점도 이미 찾았습니다. 빠진 것은 그것이 결국 무엇을 뜻하는지 말하는 문장뿐이고, 거기에는 계산이 필요 없습니다.
+
+```text
+from mathslate.ai import describe
+describe(analyze(x**3 - 3*x))
+describe(plot(tan(x)), "선이 왜 끊겨 있나요?")
+```
+
+모델은 완성된 숫자를 받을 뿐 계산하지 않습니다. `facts()`가 바로 그 전달 내용이며, 그 자체로 읽을 가치가 있습니다 — "무엇을 보냈는가"에 대한 정직한 답이기 때문입니다.
+
+```python
+from mathslate.ai import facts
+
+report = facts(analyze(x**3 - 3*x))
+print(report["roots"]["exact"], report["roots"]["approximate"])
+```
+
+모든 속성이 `approximate`와 그 근거인 `method`를 함께 싣고 있어서, 풀어낸 답과 샘플링한 답이 똑같이 제시되는 일이 없습니다. 이곳은 이 모듈에서 모델의 답변을 초안이 아니라 **답으로** 보여주는 유일한 자리입니다. 그리고 `Analysis.rows()`, `Table.text()`, `PlotResult.summary()`는 같은 사실을 손으로 쓴 형태로, 네트워크 없이 그대로 남아 있습니다.
+
+**`Suggestion.repair()` — 에러를 근거로 한 번 더.** 반쯤 기억하는 API에 대고 코드를 쓰는 모델은, 실제로 무슨 일이 일어났는지 보여주면 두 번째에 훨씬 가까워집니다.
+
+```text
+draft = ask("plot the tangent")
+try:
+    draft.run()
+except MathSlateError as failure:
+    better = draft.repair(failure)
+```
+
+루프는 의도적으로 닫지 않았습니다. `repair()`는 실행하는 대신 새 `Suggestion`을 돌려줍니다. 자동화할 가치가 있는 것은 재시도이지, 확인 단계를 건너뛰는 것이 아니기 때문입니다. 원래 질문이 에러와 함께 전달되므로, 에러만 없애려고 더 쉬운 문제를 슬쩍 푸는 수정은 프롬프트가 거부합니다.
+
+**`ask(..., about=result)` — 지시 대상이 있는 후속 질문.**
+
+```text
+drawn = plot(sin(x)/x)
+ask("같은 것을 로그 스케일로 보여줘", about=drawn)
+```
+
+전달되는 것은 `facts()`가 만드는 계산된 요약입니다. 맥락은 수집되는 것이 아니라 **지목되는** 것입니다. 옆에서 질문했다는 이유만으로 세션에 관한 정보가 기기를 떠나지 않습니다. `assistant(question, about=...)`은 같은 맥락을 패널로 이어 줍니다.
+
+**`suggest_model()` — 어떤 곡선을 맞출 것인가.** 모델 형태를 고르는 일은 수학 이전의 단계이고, 초보자에게 근거가 가장 없는 단계입니다. 그 모양은 숫자 안에 있으므로, 모델에게 추측시키는 대신 MathSlate가 **측정**합니다. 모델 계열이란 결국 데이터를 직선으로 펴 주는 변환입니다.
+
+```python
+import numpy as np
+from mathslate.ai import fit_evidence
+
+xs = np.linspace(1.0, 5.0, 20)
+readings = dataset({"x": xs, "y": 2 * np.exp(0.7 * xs)})
+
+straightness = fit_evidence(readings)["straightness"]
+print(max((name for name, r in straightness.items() if r),
+          key=lambda name: straightness[name]["r"]))
+```
+
+지수 데이터에서 `log(y) ~ x`는 1.000이고 나머지는 0.94 근처에 머무르므로, 계열은 의견이 아니라 측정 결과입니다. 각 수치는 `rows_used`를 `of`와 함께 보고합니다. `log`는 0 이하의 값을 전부 버리므로, 0을 지나는 데이터에서 지수 상관계수는 양수 꼬리만을 설명하며 꼬리는 전체보다 곧기 쉽기 때문입니다. `suggest_model(readings)`은 이 숫자들을 모델에게 넘기고, 모델은 계열의 이름을 붙여 `.fit(...)` 호출을 씁니다.
+
+#### 13.5.2 외부 에이전트를 위한 도구로서의 MathSlate
+
+위의 모든 것은 바깥을 향합니다 — MathSlate가 모델에게 묻습니다. `mathslate.ai.tools`는 안쪽을 향합니다. 에이전트가 MathSlate에 식을 건네면, 그럴듯한 기억이 아니라 **계산된 답**을 받습니다.
+
+```python
+from mathslate.ai import call, tool_names
+
+print(tool_names())
+print(call("mathslate_analyze", {"expression": "x**2 - 2"})["roots"]["exact"])
+```
+
+`tool_schemas("anthropic")`과 `tool_schemas("openai")`가 하나의 정의에서 각 제공자 형식을 생성합니다. `mathslate_plot`은 이미지를 반환하지 않습니다 — 요약, MathSlate가 붙인 노트, 그리고 동등한 평범한 프로그램을 돌려줍니다.
+
+인자는 모델에서 와서 SymPy에 도달하며, 그곳에서 문자열은 코드로 평가됩니다. 그래서 도구 호출에는 생성된 제안과 정확히 같은 신뢰 — 즉 없음 — 만 부여됩니다. 모든 요청은 MathSlate 소스로 조립되어 제안과 동일한 허용목록을 통과하고, 동일한 격리 프로세스에서 동일한 시간 예산 아래 실행됩니다. 기호 이름은 식별자여야 하고 경계값은 숫자로 다시 출력되므로, 어느 쪽도 소스를 실어 나를 수 없습니다. 거부는 예외가 아니라 `{"error": ...}`로 돌아옵니다. 호출자가 그것을 읽고 스스로 고칠 수 있는 에이전트이기 때문입니다.
+
 ### 13.6 워크시트
 
 ```python

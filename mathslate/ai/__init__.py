@@ -35,6 +35,10 @@ from .providers import (
     available_providers,
     resolve_provider,
 )
+from .describe import describe, facts
+from .explain import explain, install_hint
+from .fitting import fit_evidence, suggest_model
+from .tools import TOOLS, Tool, call, tool_names, tool_schemas
 from .suggest import (
     RunResult,
     Suggestion,
@@ -42,6 +46,7 @@ from .suggest import (
     check_connection,
     configure,
     configured,
+    contract_reference,
     forget,
     system_prompt,
 )
@@ -49,6 +54,12 @@ from .ui import AssistantPanel, assistant
 
 __all__ = [
     "ask",
+    "explain",
+    "describe",
+    "facts",
+    "suggest_model",
+    "fit_evidence",
+    "install_hint",
     "check_connection",
     "assistant",
     "AssistantPanel",
@@ -62,4 +73,10 @@ __all__ = [
     "available_providers",
     "resolve_provider",
     "system_prompt",
+    "contract_reference",
+    "TOOLS",
+    "Tool",
+    "call",
+    "tool_names",
+    "tool_schemas",
 ]

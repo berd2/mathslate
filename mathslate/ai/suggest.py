@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 import contextlib
 import io
+import json
 import pickle
 import re
 import subprocess
@@ -27,8 +28,8 @@ from typing import Any, Final
 
 from .._text import safe_print
 from ..core._budget import set_budget
-from ..errors import UnsupportedInputError
-from .providers import Backend, resolve_provider
+from ..errors import MathSlateError, UnsupportedInputError
+from .providers import Backend, Provider, resolve_provider
 
 __all__ = [
     "check_connection",
@@ -293,6 +294,60 @@ class Suggestion:
         mode explicitly.
         """
         _validate_code(self.code)
+
+    def repair(
+        self,
+        error: BaseException | None = None,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        verbose: bool = True,
+    ) -> "Suggestion":
+        """Ask for this code again, with the error it produced as evidence.
+
+        A model writing against an API it half-remembers gets closer on the
+        second try when it is shown what actually happened — the finding behind
+        the SageMath-agent results, and the useful half of an agent loop. The
+        loop is deliberately not closed here: this returns a *new suggestion*
+        rather than running it, so the reader still sees the code before it
+        executes. Retrying is the part worth automating; skipping the look is
+        not.
+
+        With no argument the code is validated and the refusal becomes the
+        evidence. Pass the exception from :meth:`run` to repair a failure that
+        only showed up once it ran.
+
+        Examples
+        --------
+        >>> from mathslate.ai import ask                        # doctest: +SKIP
+        >>> draft = ask("plot the tangent")                     # doctest: +SKIP
+        >>> try:                                                # doctest: +SKIP
+        ...     draft.run()
+        ... except MathSlateError as failure:
+        ...     better = draft.repair(failure)
+        """
+        from .explain import repair_suggestion
+
+        if error is None:
+            try:
+                self.validate()
+            except MathSlateError as refusal:
+                error = refusal
+            else:
+                raise UnsupportedInputError(
+                    "there is nothing to repair: this code passes validation. "
+                    "If it failed when it ran, pass that error — "
+                    "suggestion.repair(err)."
+                )
+        return repair_suggestion(
+            self,
+            error,
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            verbose=verbose,
+        )
 
     def run(
         self,
@@ -646,6 +701,54 @@ def _safe_assignment_target(target: ast.expr) -> bool:
     return False
 
 
+def contract_reference() -> str:
+    """The API description both the writing and the diagnosing prompts share.
+
+    Built from :data:`mathslate.core.dispatch.KINDS` rather than written out
+    beside it, so a kind cannot be added without every prompt learning about it
+    in the same commit — which is the point §22 of the manual makes about this
+    module, and applies as much to explaining a mistake as to writing code.
+    """
+    from ..core.dispatch import KINDS
+
+    return textwrap.dedent(
+        f"""\
+        MathSlate wraps SymPy, NumPy and Plotly behind one function, `plot()`,
+        which infers what was meant. Assume `from mathslate import *` has run:
+        `plot`, `polar`, `analyze`, `table`, `slider`, `animate`, `dataset`,
+        `show_python`, the SymPy functions (`sin`, `cos`, `exp`, `sqrt`, `log`,
+        `floor`, `Abs`, `diff`, `integrate`, `solve`, `Eq`, `Matrix`, ...) and
+        the symbols `x, y, z, t, n, k, theta` all already exist.
+
+        The dispatch contract — one rule: a `list` means several things
+        together, a `tuple` means one vector-valued object.
+
+          plot(sin(x)/x)                      a 2D curve
+          plot([sin(x), cos(x)])              two curves overlaid
+          plot((cos(t), sin(t)))              one parametric curve
+          plot((cos(t), sin(t), t))           a 3D space curve
+          plot(x*y)                           a surface
+          plot(x*y, kind="contour")           the same, flat
+          plot(Eq(x**2 + y**2, 4))            an implicit curve
+          polar(1 + cos(t))                   r = f(theta)
+          plot(Matrix([[2, 1], [1, 3]]))      a matrix as a transformation
+          plot(sin(x), (x, 0, 6.28))          an explicit range
+          plot([1.0, 2.0, 3.0], kind="hist")  a histogram
+
+        A range is always the triple `(symbol, lo, hi)` — `plot(sin(x), (x, 0,
+        6.28))`, never `plot(sin(x), 0, 6.28)`.
+
+        Other entry points:
+          analyze(expr)      roots, extrema, asymptotes, symmetry, period
+          table(expr)        the same function as a table of values
+          a = slider(-5, 5)  then plot(a*sin(x)) — no callback needed
+          dataset({{...}})     then .fit(a*x + b) to fit a symbolic model
+
+        Plot kinds that can come back: {", ".join(KINDS)}.
+        """
+    )
+
+
 def system_prompt() -> str:
     """What the model is told about MathSlate. Built from the real contract."""
     from ..core.dispatch import KINDS
@@ -696,24 +799,20 @@ def system_prompt() -> str:
     )
 
 
-def ask(
+def _complete(
+    system: str,
     question: str,
-    provider: str | None = None,
-    model: str | None = None,
-    api_key: str | None = None,
-    verbose: bool = False,
-) -> Suggestion:
-    """Turn a question into MathSlate code. Nothing is executed.
+    provider: str | None,
+    model: str | None,
+    api_key: str | None,
+) -> tuple[str, Provider, str]:
+    """Resolve a provider, send one message, and return ``(reply, provider, model)``.
 
-    Examples
-    --------
-    >>> from mathslate.ai import ask                       # doctest: +SKIP
-    >>> print(ask("plot the tangent over one period").code)  # doctest: +SKIP
-    plot(tan(x), (x, -1.5, 1.5))
+    Every entry point that talks to a model goes through here, so credential
+    resolution — a per-call key not inheriting a session provider, a saved key
+    being found for the named one, the key never reaching an error message —
+    is decided in one place rather than re-implemented per feature.
     """
-    if not question.strip():
-        raise UnsupportedInputError("ask() needs a question.")
-
     effective_key = api_key or _DEFAULTS["api_key"]
     # A per-call key does not inherit a session provider: the key may belong to
     # another service. With several SDKs installed, resolve_provider() will ask
@@ -729,9 +828,7 @@ def ask(
         if saved is not None:
             provider_name = saved.provider
             effective_key = saved.api_key
-    chosen = resolve_provider(
-        provider_name, api_key=effective_key
-    )
+    chosen = resolve_provider(provider_name, api_key=effective_key)
     model_name = (
         model
         or _DEFAULTS["model"]
@@ -741,7 +838,7 @@ def ask(
     backend: Backend = chosen.build(effective_key)
 
     try:
-        reply = backend.complete(system_prompt(), question, model_name)
+        reply = backend.complete(system, question, model_name)
     except Exception as exc:
         detail = str(exc).strip()
         if effective_key:
@@ -756,6 +853,69 @@ def ask(
             f"provider {chosen.name!r} returned no text. Retry the request, "
             "check the provider status, or choose another model."
         )
+    return reply, chosen, model_name
+
+
+#: Added to the prompt when the caller names a result the question is about.
+_FOLLOW_UP_RULES: str = textwrap.dedent(
+    """\
+
+    The reader already has the result described below, and their question is
+    about it. "It", "this", "the plot" and "the same thing" all mean that
+    result. Those facts were computed by MathSlate and are correct — do not
+    re-derive them, and do not contradict them.
+
+    Write the code for what they are asking for *now*, and make it standalone:
+    name the expression again rather than referring to a variable, because you
+    were not told what the reader called it.
+    """
+)
+
+
+def ask(
+    question: str,
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    verbose: bool = False,
+    *,
+    about: object | None = None,
+) -> Suggestion:
+    """Turn a question into MathSlate code. Nothing is executed.
+
+    ``about`` names a result the question follows on from — a plot, an analysis,
+    a table, a fit — so that "show it on a log scale" has an *it*. What is sent
+    is the same computed summary :func:`mathslate.ai.facts` returns, so the
+    context is a page of verified numbers rather than a transcript, and it is
+    named rather than collected: nothing about the session leaves the machine
+    because a question was asked near it.
+
+    Examples
+    --------
+    >>> from mathslate.ai import ask                       # doctest: +SKIP
+    >>> print(ask("plot the tangent over one period").code)  # doctest: +SKIP
+    plot(tan(x), (x, -1.5, 1.5))
+    >>> drawn = plot(sin(x)/x)                             # doctest: +SKIP
+    >>> ask("show the same thing on a log scale", about=drawn)  # doctest: +SKIP
+    """
+    if not question.strip():
+        raise UnsupportedInputError("ask() needs a question.")
+
+    system = system_prompt()
+    message = question
+    if about is not None:
+        from .describe import facts
+
+        system += _FOLLOW_UP_RULES
+        message = (
+            "The reader is looking at this result:\n\n"
+            f"{json.dumps(facts(about), indent=2, ensure_ascii=False)}\n\n"
+            f"Their question: {question}"
+        )
+
+    reply, chosen, model_name = _complete(
+        system, message, provider, model, api_key
+    )
     code, commentary = _split(reply)
     suggestion = Suggestion(
         code=code,
