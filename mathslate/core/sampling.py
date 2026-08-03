@@ -499,7 +499,18 @@ def _jumps_along(
     if not pair.any():
         return []
     lo, hi = _robust_span(values, config.clip_percentiles)
-    threshold = max((hi - lo) * 0.01, _TINY)
+    # A jump must be macroscopic relative to the curve's own size. Floating-point
+    # evaluation of a mathematically constant expression — ``sin(x)**2 +
+    # cos(x)**2`` is the canonical case — wobbles at ~1e-16 of its magnitude, so
+    # ``_robust_span`` on it returns a width of a few ULP and ``(hi-lo)*0.01``
+    # collapses to ~1e-18. Every ULP wobble then clears that threshold, and the
+    # bisection below confirms each one (noise does not shrink as the interval
+    # does), inserting hundreds of NaN breaks into what should be one solid line.
+    # A floor at 1e-9 of the coordinate's own scale sits seven orders of
+    # magnitude above that noise and far below any genuine discontinuity.
+    finite_values = values[np.isfinite(values)]
+    scale = float(np.max(np.abs(finite_values))) if finite_values.size else 0.0
+    threshold = max((hi - lo) * 0.01, scale * 1e-9, _TINY)
     with np.errstate(invalid="ignore"):
         # inf - inf is nan here, which simply means "not a candidate".
         gaps = np.where(pair, np.abs(np.diff(values)), 0.0)
