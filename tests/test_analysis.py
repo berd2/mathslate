@@ -41,6 +41,22 @@ class TestRoots:
         assert len(analyze(sin(x), (x, -10.0, 10.0)).roots) == 7
         assert len(analyze(sin(x), (x, 0.0, 3.5)).roots) == 2
 
+    def test_exact_roots_are_kept_exact_not_reguessed_by_nsimplify(self) -> None:
+        """A solveset FiniteSet already holds the exact roots. Running nsimplify
+        on each was slow (tens of seconds for a many-rooted curve) and wrong: it
+        re-derives from the float and could return a different closed form that
+        merely approximates it. Every reported symbolic root must equal its own
+        numeric value."""
+        found = analyze(sin(1000 * x), (x, -1.0, 1.0)).roots
+        assert not found.approximate
+        assert len(found.symbolic) == len(found.values)
+        for symbol_value, numeric in zip(found.symbolic, found.values):
+            assert float(symbol_value) == pytest.approx(numeric, abs=1e-9)
+        # The exact form is the clean one solveset produced (a rational
+        # multiple of pi), not a spurious product of prime powers nsimplify
+        # would have invented from the float.
+        assert found.symbolic[1].has(sp.pi)
+
     def test_an_unsolvable_equation_falls_back_and_says_so(self) -> None:
         """`solveset` answers `x - cos(x)` with a ConditionSet, not a solution."""
         found = analyze(x - cos(x)).roots
