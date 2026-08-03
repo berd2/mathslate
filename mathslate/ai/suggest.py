@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 import contextlib
 import io
+import json
 import pickle
 import re
 import subprocess
@@ -855,26 +856,65 @@ def _complete(
     return reply, chosen, model_name
 
 
+#: Added to the prompt when the caller names a result the question is about.
+_FOLLOW_UP_RULES: str = textwrap.dedent(
+    """\
+
+    The reader already has the result described below, and their question is
+    about it. "It", "this", "the plot" and "the same thing" all mean that
+    result. Those facts were computed by MathSlate and are correct — do not
+    re-derive them, and do not contradict them.
+
+    Write the code for what they are asking for *now*, and make it standalone:
+    name the expression again rather than referring to a variable, because you
+    were not told what the reader called it.
+    """
+)
+
+
 def ask(
     question: str,
     provider: str | None = None,
     model: str | None = None,
     api_key: str | None = None,
     verbose: bool = False,
+    *,
+    about: object | None = None,
 ) -> Suggestion:
     """Turn a question into MathSlate code. Nothing is executed.
+
+    ``about`` names a result the question follows on from — a plot, an analysis,
+    a table, a fit — so that "show it on a log scale" has an *it*. What is sent
+    is the same computed summary :func:`mathslate.ai.facts` returns, so the
+    context is a page of verified numbers rather than a transcript, and it is
+    named rather than collected: nothing about the session leaves the machine
+    because a question was asked near it.
 
     Examples
     --------
     >>> from mathslate.ai import ask                       # doctest: +SKIP
     >>> print(ask("plot the tangent over one period").code)  # doctest: +SKIP
     plot(tan(x), (x, -1.5, 1.5))
+    >>> drawn = plot(sin(x)/x)                             # doctest: +SKIP
+    >>> ask("show the same thing on a log scale", about=drawn)  # doctest: +SKIP
     """
     if not question.strip():
         raise UnsupportedInputError("ask() needs a question.")
 
+    system = system_prompt()
+    message = question
+    if about is not None:
+        from .describe import facts
+
+        system += _FOLLOW_UP_RULES
+        message = (
+            "The reader is looking at this result:\n\n"
+            f"{json.dumps(facts(about), indent=2, ensure_ascii=False)}\n\n"
+            f"Their question: {question}"
+        )
+
     reply, chosen, model_name = _complete(
-        system_prompt(), question, provider, model, api_key
+        system, message, provider, model, api_key
     )
     code, commentary = _split(reply)
     suggestion = Suggestion(

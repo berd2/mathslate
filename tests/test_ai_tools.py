@@ -60,9 +60,18 @@ class TestTheAnswersAreComputed:
     def test_a_plot_returns_what_can_be_said_about_it(self) -> None:
         result = tools.call("mathslate_plot", {"expression": "sin(x)/x"})
         assert result["kind"] == "curve"
+        assert result["expression"] == "sin(x)/x"
         assert "411 samples" in result["summary"]
         assert any("singularities" in note for note in result["notes"])
         assert "import plotly" in result["python"]
+
+    def test_raw_data_has_no_expression_to_report(self) -> None:
+        """The key is left out rather than reported as null: there is no
+        function here, which is different from one that could not be named."""
+        result = tools.call(
+            "mathslate_plot", {"expression": "[1.0, 4.0, 9.0]", "kind": "scatter"}
+        )
+        assert "expression" not in result
 
 
 class TestArgumentsAreUntrusted:

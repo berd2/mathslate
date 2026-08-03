@@ -196,12 +196,25 @@ def _analysis(analysis: Any) -> dict[str, Any]:
 def _plot(result: Any) -> dict[str, Any]:
     """A plot as what can be *said* about it — no image crosses this boundary."""
     plan = result.plan
-    return {
+    drawn = result.sympy
+    payload: dict[str, Any] = {
         "summary": result.summary(),
         "kind": plan.kind,
         "notes": list(plan.notes),
         "python": result.python(),
     }
+    # What was drawn, not merely how it turned out. The summary reports the
+    # sampling ("411 samples"); without the expression itself a reader of these
+    # facts cannot say anything about the *function*, and a follow-up request —
+    # "the same thing on a log scale" — has nothing to name. Raw data has no
+    # expression, and says so by leaving the key out.
+    if drawn is not None:
+        payload["expression"] = (
+            sp.sstr(drawn)
+            if isinstance(drawn, sp.Basic)
+            else [sp.sstr(part) for part in drawn]
+        )
+    return payload
 
 
 def _table(table: Any) -> dict[str, Any]:

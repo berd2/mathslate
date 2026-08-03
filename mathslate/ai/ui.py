@@ -66,8 +66,13 @@ class AssistantPanel:
         display(self.widget)
 
 
-def assistant(question: str = "") -> AssistantPanel:
+def assistant(question: str = "", *, about: object | None = None) -> AssistantPanel:
     """Return an interactive setup, question, status and result panel.
+
+    ``about`` fixes a result every question in this panel follows on from — the
+    plot being worked on — so "now on a log scale" means something in the box
+    as well as in :func:`~mathslate.ai.ask`. It is the panel's context for as
+    long as the panel lives; open another to ask about something else.
 
     API keys entered here are session-only unless the user explicitly selects
     ``Remember on this device``. Persistent storage is disabled in JupyterLite.
@@ -193,6 +198,7 @@ def assistant(question: str = "") -> AssistantPanel:
                 prompt,
                 provider=chosen.name,
                 model=model_box.value.strip() or None,
+                about=about,
             )
             panel.suggestion = result
             code.value = result.code
