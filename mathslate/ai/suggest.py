@@ -88,6 +88,17 @@ _SAFE_BUILTINS: dict[str, Any] = {
 }
 _MAX_SAFE_CODE_CHARS = 20_000
 _MAX_SAFE_AST_NODES = 400
+#: The allowlisted callables that take a string and do *not* hand it to
+#: ``sympify``. ``symbols``/``Symbol`` read it as a name; ``dataset`` reads it
+#: as column names and data. Every other allowlisted callable sympifies its
+#: positional arguments, and ``sympify`` on a string ``eval``\ s that string as
+#: Python — ``solve("__import__('os').system(...)")`` is arbitrary code, not an
+#: equation. So a string literal is refused everywhere except the positions
+#: these three make safe (and keyword values, which nothing sympifies).
+_STRING_CALLABLES: frozenset[str] = frozenset({"symbols", "Symbol", "dataset"})
+#: A name ``symbols()``/``Symbol()`` will accept — belt and suspenders, since a
+#: name is never evaluated, but it keeps even that string to identifier shapes.
+_SYMBOL_NAME = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*(\s*[ ,:]\s*[A-Za-z_][A-Za-z0-9_]*)*\s*$")
 #: Wall-clock budget for one restricted execution. The AST allowlist bounds
 #: *what* restricted code can name, not what a legal expression costs to run —
 #: ``9**9**9`` is three ``Constant``/``BinOp`` nodes and passes validation, but
@@ -525,12 +536,26 @@ def _validate_code(code: str) -> None:
             "AI suggestion is too complex for restricted execution."
         )
 
+    safe_strings = _sympify_safe_string_literals(tree)
     for node in nodes:
         if not isinstance(node, _ALLOWED_AST_NODES):
             raise UnsupportedInputError(
                 f"AI suggestion uses {type(node).__name__}, which restricted "
                 "execution does not allow."
             )
+        if isinstance(node, ast.Constant):
+            # SymPy's ``sympify`` evaluates a string as a Python expression, and
+            # recurses into a list/tuple/dict to do the same to each element —
+            # so a string literal anywhere an allowlisted callable might sympify
+            # it is arbitrary code that the allowlist above waves straight
+            # through (it is one ``Constant`` node). Everything else here checks
+            # what code *names*; this checks the one value that is itself code.
+            if isinstance(node.value, str) and id(node) not in safe_strings:
+                raise UnsupportedInputError(
+                    "AI suggestion has a string literal in a position SymPy "
+                    "would evaluate as code; write the expression itself, e.g. "
+                    'sin(x) rather than "sin(x)".'
+                )
         if isinstance(node, ast.Assign):
             if not all(_safe_assignment_target(target) for target in node.targets):
                 raise UnsupportedInputError(
@@ -564,6 +589,53 @@ def _validate_code(code: str) -> None:
                     "AI suggestion uses an indirect call that restricted execution "
                     "cannot verify."
                 )
+
+
+def _sympify_safe_string_literals(tree: ast.AST) -> frozenset[int]:
+    """The ``id()``\\ s of string literals that cannot reach ``sympify``.
+
+    A string is safe in exactly two shapes: as a keyword-argument value (no
+    allowlisted callable sympifies one), or as a *literal* inside the positional
+    arguments of the three callables that read strings as names or data rather
+    than as expressions (:data:`_STRING_CALLABLES`). "Literal" is the load-
+    bearing word: ``dataset({"x": [1, 2]})`` is safe, but the ``"..."`` in
+    ``dataset({"x": solve("...")})`` sits inside a *call*, would be sympified
+    there, and must stay refused — so the walk into a container stops at the
+    first thing that is not itself a literal.
+    """
+    safe: set[int] = set()
+
+    def _is_str(node: ast.AST) -> bool:
+        return isinstance(node, ast.Constant) and isinstance(node.value, str)
+
+    def _allow_literal(node: ast.AST) -> None:
+        """Mark every string reachable through pure literal containers only."""
+        if _is_str(node):
+            safe.add(id(node))
+        elif isinstance(node, ast.Dict):
+            for key in node.keys:
+                if key is not None:
+                    _allow_literal(key)
+            for value in node.values:
+                _allow_literal(value)
+        elif isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            for element in node.elts:
+                _allow_literal(element)
+        # Anything else — a Call, a Name, a BinOp — is not descended into, so a
+        # string buried inside it stays outside `safe` and is refused.
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.keyword) and _is_str(node.value):
+            safe.add(id(node.value))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id == "dataset":
+                for arg in node.args:
+                    _allow_literal(arg)
+            elif node.func.id in _STRING_CALLABLES:  # symbols / Symbol
+                for arg in node.args:
+                    if _is_str(arg) and _SYMBOL_NAME.match(arg.value):
+                        safe.add(id(arg))
+    return frozenset(safe)
 
 
 def _safe_assignment_target(target: ast.expr) -> bool:

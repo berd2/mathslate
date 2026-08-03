@@ -84,6 +84,12 @@ class TestTheBridge:
         with pytest.raises(UnsupportedInputError, match="no free parameters"):
             data.fit(sin(x))
 
+    def test_a_non_symbolic_model_is_explained_not_crashed(self) -> None:
+        """`fit(42)` reached for `.free_symbols` on an int; say what fit wanted."""
+        data = dataset({"x": [0, 1], "y": [0.0, 1.0]})
+        with pytest.raises(UnsupportedInputError, match="symbolic model"):
+            data.fit(42)
+
     def test_too_few_rows_for_the_parameters_is_refused(self) -> None:
         data = dataset({"x": [0.0], "y": [1.0]})
         with pytest.raises(UnsupportedInputError, match="cannot determine"):

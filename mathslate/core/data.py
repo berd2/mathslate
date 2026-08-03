@@ -206,6 +206,16 @@ class Dataset:
         and the residuals come back either way so the fit can be judged rather
         than trusted.
         """
+        if not isinstance(model, sp.Basic):
+            # A model is a SymPy expression written on paper — `a*x + b`. A
+            # bare number or Python object has no `.free_symbols`, and reaching
+            # for one three lines down raises a raw AttributeError instead of
+            # saying what fit() actually wanted.
+            raise UnsupportedInputError(
+                f"fit() needs a symbolic model like a*x + b; got {model!r}. "
+                "Write it with symbols, e.g. a, b = symbols('a b'); "
+                "data.fit(a*x + b)."
+            )
         names = self.names
         x_name = x or names[0]
         y_name = y or (names[1] if len(names) > 1 else names[0])

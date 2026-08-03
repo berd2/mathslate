@@ -897,7 +897,18 @@ def _plan_triple(
 
 
 def _constant_sample(expr: sp.Expr, span: tuple[float, float]) -> SampleResult:
-    value = float(sp.N(expr))
+    try:
+        value = float(sp.N(expr))
+    except TypeError as error:
+        # A constant with no free symbols that is not a real number — `I`,
+        # `2 + 3*I`, `zoo` — has no height to draw on a real y-axis. `float()`
+        # says "Cannot convert complex to float" from two frames down; say what
+        # it means for a plot instead.
+        raise UnsupportedInputError(
+            f"{sp.sstr(expr)} is not a real number, so it has no value to plot "
+            "on a real axis. Plot its real or imaginary part, e.g. re(...) or "
+            "im(...)."
+        ) from error
     x = np.linspace(span[0], span[1], 2, dtype=np.float64)
     return SampleResult(x=x, y=np.full(2, value, dtype=np.float64), t=x)
 

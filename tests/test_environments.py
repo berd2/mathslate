@@ -122,11 +122,10 @@ def test_the_frontend_adapter_recognizes_jupyterlite(monkeypatch: pytest.MonkeyP
 def test_jupyterlite_report_gives_a_piplite_install_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mathslate import result
-    from mathslate.ui import adapters
+    from mathslate.ui import adapters, range_controls
 
     monkeypatch.setattr(sys, "platform", "emscripten")
-    monkeypatch.setattr(result, "_live_range_deps_available", lambda: False)
+    monkeypatch.setattr(range_controls, "deps_available", lambda: False)
     monkeypatch.setattr(adapters, "_available", lambda _name: False)
     assert "await piplite.install" in adapters.frontend_report()
 

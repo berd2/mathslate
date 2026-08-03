@@ -93,16 +93,18 @@ def _range_controls_status(frontend: Frontend) -> str:
     Plotly's ``FigureWidget``, which on Plotly >= 6 additionally needs
     ``anywidget`` — a second install the "interactive widgets" line above does
     not check, and the one most likely to be the actual reason nothing showed.
-    Imported lazily: :mod:`mathslate.result` imports this module, so importing
-    it back at module load would be a cycle.
+    Imported lazily: :mod:`.range_controls` builds the sidebar and so imports
+    this module for :func:`detect_frontend`, and that is the direction the two
+    should depend in — frontend detection knows nothing about widgets. This one
+    call back up is what a lazy import is for.
     """
-    from ..result import _live_range_deps_available, get_range_controls
+    from . import range_controls
 
-    if not get_range_controls():
+    if not range_controls.get_range_controls():
         return "off — set_range_controls(True) to turn back on"
     if frontend not in (Frontend.JUPYTER, Frontend.COLAB):
         return f"not shown on {frontend.value} — needs a Jupyter or Colab kernel"
-    if not _live_range_deps_available():
+    if not range_controls.deps_available():
         missing = "anywidget" if _available("ipywidgets") else "ipywidgets"
         if sys.platform == "emscripten":
             return (

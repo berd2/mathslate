@@ -6,6 +6,7 @@ at all. Everything else in this package exists to make ``plot()`` correct.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import replace
 from typing import Any, Mapping, Sequence
 
@@ -119,10 +120,9 @@ def plot(
     if driving is not None:
         driver, note = driving
         return _interactive(
-            obj, ranges, driver, options, verbose, note, play=False, **_pass_through(
-                polar=polar, kind=kind, label=label, points=points,
-                exclusions=exclusions, parameters=parameters,
-            )
+            obj, ranges, driver, options, verbose, note, play=False,
+            polar=polar, kind=kind, label=label, points=points,
+            exclusions=exclusions, parameters=parameters,
         )
 
     figure = plotly_backend.figure_from_plan(plan, options)
@@ -133,11 +133,6 @@ def plot(
         for note in plan.notes:
             safe_print(f"  · {note}")
     return result
-
-
-def _pass_through(**kwargs: Any) -> dict[str, Any]:
-    """The `plot()` arguments that must be identical in every frame."""
-    return kwargs
 
 
 def _render_options(
@@ -266,7 +261,14 @@ def _interactive(
     play: bool,
     **passed: Any,
 ) -> PlotResult:
-    """Draw one plan per slider position and hand Plotly the frames."""
+    """Draw one plan per slider position and hand Plotly the frames.
+
+    ``passed`` is the `plot()` arguments that must be identical in every
+    frame — everything `build_plan` reads, plus the two sampling keywords it
+    reads through a config. Only the axis being animated may differ between
+    frames; anything else varying would make the slider change two things at
+    once.
+    """
     steps = driver.values()
     held = driver.value
     plans: list[PlotPlan] = []
@@ -302,8 +304,7 @@ def _interactive(
 
 def _plan_args(passed: dict[str, Any]) -> dict[str, Any]:
     """Everything `build_plan` takes — the sampling keywords go via the config."""
-    sampling = {"points", "exclusions"}
-    return {k: v for k, v in passed.items() if k not in sampling}
+    return {k: v for k, v in passed.items() if k not in _SAMPLING_KEYWORDS}
 
 
 def _config_for(passed: dict[str, Any]) -> SamplingConfig:
@@ -376,6 +377,68 @@ def _exclusion_points(given: Sequence[float]) -> tuple[float, ...]:
     return tuple(places)
 
 
+# --------------------------------------------------------------------------
+# what `animate()` accepts, named by the functions that consume it
+# --------------------------------------------------------------------------
+#
+# `animate()` takes `**kwargs` because it forwards `plot()`'s whole keyword
+# surface, and the two used to be kept in step by hand: one list of names for
+# the drawing options, another for the planning ones. That is not a style
+# preference, it is the bug's shape — `mesh`, `xlim`, `ylim` and `zlim` were
+# dropped from every animation until the review that introduced
+# `_render_options`, because they were added to `plot()` and to nothing else.
+# Asking the consuming functions what they take means the next keyword `plot()`
+# gains reaches `animate()` without anyone remembering that it has to.
+
+#: The drawing keywords — whatever `_render_options` validates.
+_RENDER_KEYWORDS: frozenset[str] = frozenset(
+    inspect.signature(_render_options).parameters
+)
+#: The two keywords that reach `build_plan` as a `SamplingConfig` rather than
+#: as themselves, so they are excluded from the call and passed via `config=`.
+_SAMPLING_KEYWORDS: frozenset[str] = frozenset(
+    inspect.signature(_sampling_config).parameters
+)
+#: Everything that decides *what is sampled*, as opposed to how it is drawn.
+#: ``obj``/``ranges`` are positional and ``config`` is built from the sampling
+#: keywords above, so none of the three is a keyword a caller passes.
+_PLAN_KEYWORDS: frozenset[str] = (
+    frozenset(inspect.signature(build_plan).parameters)
+    - {"obj", "ranges", "config"}
+) | _SAMPLING_KEYWORDS
+
+
+def _animate_keywords(
+    kwargs: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Split `animate()`'s keywords into the drawing half and the sampling half.
+
+    ``kind`` is deliberately in both: it picks the trace mode *and* steers
+    dispatch, which is exactly what `plot()` does with it too.
+
+    Only the keywords actually given are forwarded, so each consumer's own
+    default applies to the rest — a default repeated here is one more thing
+    that can drift out of step with `plot()`.
+
+    An unknown keyword is refused rather than ignored. `plot()` raises
+    `TypeError` for one, while `animate(a*sin(x), tittle="Moving")` used to
+    accept it in silence and draw an untitled plot — the same "option that
+    quietly ignores the value it was given" this module refuses everywhere
+    else.
+    """
+    unknown = set(kwargs) - _RENDER_KEYWORDS - _PLAN_KEYWORDS
+    if unknown:
+        accepted = sorted(_RENDER_KEYWORDS | _PLAN_KEYWORDS | {"over", "verbose"})
+        raise UnsupportedInputError(
+            f"animate() got {', '.join(sorted(unknown))}, which plot() does not "
+            f"take either. animate() accepts: {', '.join(accepted)}."
+        )
+    return (
+        {name: value for name, value in kwargs.items() if name in _RENDER_KEYWORDS},
+        {name: value for name, value in kwargs.items() if name in _PLAN_KEYWORDS},
+    )
+
+
 def animate(
     obj: object,
     *ranges: object,
@@ -407,10 +470,8 @@ def animate(
             "first, e.g. a = slider(1, 3); animate(a*sin(x))."
         )
     verbose = kwargs.pop("verbose", None)
-    options = _render_options(**{
-        name: kwargs.get(name)
-        for name in ("title", "yscale", "show_legend", "kind", "xlim", "ylim", "zlim")
-    }, mesh=kwargs.get("mesh", True))
+    render, passed = _animate_keywords(kwargs)
+    options = _render_options(**render)
     note = ""
     if len(found) > 1:
         others = [s for s in found if s is not driver]
@@ -427,19 +488,8 @@ def animate(
         verbose,
         note,
         play=True,
-        **_animate_plan_args(kwargs),
+        **passed,
     )
-
-
-def _animate_plan_args(kwargs: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "polar": kwargs.get("polar", False),
-        "kind": kwargs.get("kind"),
-        "label": kwargs.get("label"),
-        "parameters": kwargs.get("parameters", ()),
-        "points": kwargs.get("points"),
-        "exclusions": kwargs.get("exclusions"),
-    }
 
 
 def polar(
