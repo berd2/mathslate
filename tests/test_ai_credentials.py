@@ -14,6 +14,7 @@ from typing import Iterator
 
 import pytest
 
+import mathslate.ai.suggest as suggest_module
 from mathslate.ai import providers
 from mathslate.ai.suggest import ask, configure, configured, forget
 from mathslate.errors import UnsupportedInputError
@@ -114,6 +115,37 @@ class TestTheKeyCanBeTakenBack:
 
 
 class TestConfiguredCredentialsStayWithTheirProvider:
+    def test_explicit_provider_never_receives_another_providers_session_key_or_model(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        received: list[tuple[str | None, str]] = []
+
+        class Backend:
+            def __init__(self, key: str | None) -> None:
+                self.key = key
+
+            def complete(self, system: str, question: str, model: str) -> str:
+                received.append((self.key, model))
+                return "```python\nplot(x)\n```"
+
+        openai = providers.Provider(
+            name="openai", package="sys", pip_name="openai",
+            env_var="OPENAI_TEST_KEY", default_model="openai-default",
+            build=Backend,
+        )
+        monkeypatch.setattr(providers, "PROVIDERS", (openai,))
+        monkeypatch.setattr(
+            suggest_module, "resolve_provider", lambda name, *, api_key=None: openai
+        )
+        configure(
+            provider="claude", model="claude-model", api_key="anthropic-secret"
+        )
+
+        answer = ask("draw it", provider="openai")
+
+        assert answer.provider == "openai"
+        assert received == [(None, "openai-default")]
+
     def test_switching_provider_never_carries_the_old_key(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

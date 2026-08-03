@@ -219,6 +219,18 @@ def test_panel_shows_progress_and_the_generated_code(
     assert panel.api_key.value == ""
     assert panel.run_button.disabled is False
 
+    ran: list[str] = []
+    monkeypatch.setattr(
+        Suggestion,
+        "run",
+        lambda self, **kwargs: ran.append(self.code) or {},
+    )
+    panel.code.value = "plot(cos(x))"
+    panel.run_button.click()
+
+    assert ran == ["plot(cos(x))"]
+    assert panel.suggestion.code == "plot(cos(x))"
+
 
 def test_jupyterlite_disables_persistent_credentials(
     monkeypatch: pytest.MonkeyPatch

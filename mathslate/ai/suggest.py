@@ -813,27 +813,8 @@ def _complete(
     being found for the named one, the key never reaching an error message —
     is decided in one place rather than re-implemented per feature.
     """
-    effective_key = api_key or _DEFAULTS["api_key"]
-    # A per-call key does not inherit a session provider: the key may belong to
-    # another service. With several SDKs installed, resolve_provider() will ask
-    # the caller to name the provider instead of exposing the credential.
-    provider_name = provider
-    if provider_name is None and api_key is None:
-        provider_name = _DEFAULTS["provider"]
-    saved = None
-    if effective_key is None and api_key is None:
-        from .credentials import load_credential
-
-        saved = load_credential(provider_name)
-        if saved is not None:
-            provider_name = saved.provider
-            effective_key = saved.api_key
-    chosen = resolve_provider(provider_name, api_key=effective_key)
-    model_name = (
-        model
-        or _DEFAULTS["model"]
-        or (saved.model if saved is not None else None)
-        or chosen.default_model
+    chosen, model_name, effective_key = _resolve_request(
+        provider=provider, model=model, api_key=api_key
     )
     backend: Backend = chosen.build(effective_key)
 
@@ -854,6 +835,41 @@ def _complete(
             "check the provider status, or choose another model."
         )
     return reply, chosen, model_name
+
+
+def _resolve_request(
+    *, provider: str | None, model: str | None, api_key: str | None
+) -> tuple[Provider, str, str | None]:
+    """Resolve one request without carrying credentials across providers.
+
+    Session credentials and model names belong to the session provider.  An
+    explicit different provider must start with an empty credential context so
+    its own saved key or environment variable is used.  Likewise, a per-call
+    key with no provider must not inherit the session provider: only the caller
+    knows which service issued that key.
+    """
+    default_provider = _DEFAULTS["provider"]
+    use_session = api_key is None and (
+        provider is None or provider == default_provider
+    )
+    provider_name = provider or (default_provider if use_session else None)
+    effective_key = api_key or (_DEFAULTS["api_key"] if use_session else None)
+    saved = None
+    if effective_key is None and api_key is None:
+        from .credentials import load_credential
+
+        saved = load_credential(provider_name)
+        if saved is not None:
+            provider_name = saved.provider
+            effective_key = saved.api_key
+    chosen = resolve_provider(provider_name, api_key=effective_key)
+    model_name = (
+        model
+        or (_DEFAULTS["model"] if use_session else None)
+        or (saved.model if saved is not None else None)
+        or chosen.default_model
+    )
+    return chosen, model_name, effective_key
 
 
 #: Added to the prompt when the caller names a result the question is about.
@@ -942,24 +958,8 @@ def check_connection(
     probe sends only a fixed, non-mathematical message and returns a concise
     local status instead of treating the provider reply as generated code.
     """
-    effective_key = api_key or _DEFAULTS["api_key"]
-    provider_name = provider
-    if provider_name is None and api_key is None:
-        provider_name = _DEFAULTS["provider"]
-    saved = None
-    if effective_key is None and api_key is None:
-        from .credentials import load_credential
-
-        saved = load_credential(provider_name)
-        if saved is not None:
-            provider_name = saved.provider
-            effective_key = saved.api_key
-    chosen = resolve_provider(provider_name, api_key=effective_key)
-    model_name = (
-        model
-        or _DEFAULTS["model"]
-        or (saved.model if saved is not None else None)
-        or chosen.default_model
+    chosen, model_name, effective_key = _resolve_request(
+        provider=provider, model=model, api_key=api_key
     )
     backend: Backend = chosen.build(effective_key)
     try:

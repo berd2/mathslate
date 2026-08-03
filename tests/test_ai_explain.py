@@ -79,6 +79,18 @@ class TestTheEvidenceHandedToTheModel:
         assert "a range must be written (symbol, lo, hi)" in report
         assert "authoritative" in report
         assert "Traceback" in report
+        assert str(__file__) not in report
+        assert "test_ai_explain.py" in report
+
+    def test_it_redacts_credentials_from_messages_and_source_lines(self) -> None:
+        def fail() -> None:
+            api_key = "sk-ant-this-must-not-leave-the-machine"
+            raise RuntimeError(f"request used api_key={api_key}")
+
+        report = _report(_raised(fail), None)
+
+        assert "this-must-not-leave-the-machine" not in report
+        assert "api_key=[hidden]" in report
 
     def test_an_unrelated_error_is_labelled_as_not_mathslates(self) -> None:
         report = _report(_raised(lambda: 1 / 0), None)
@@ -88,6 +100,11 @@ class TestTheEvidenceHandedToTheModel:
         report = _report(None, "plot(sin(x), 0, 6.28)")
         assert "has not been run" in report
         assert "plot(sin(x), 0, 6.28)" in report
+
+    def test_explicit_code_is_redacted_too(self) -> None:
+        report = _report(None, 'api_key = "AIza-not-for-a-provider"')
+        assert "not-for-a-provider" not in report
+        assert "api_key = [hidden]" in report
 
 
 class TestExplain:

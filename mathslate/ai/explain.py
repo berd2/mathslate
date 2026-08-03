@@ -26,6 +26,7 @@ code for the reader to look at; ``.run()`` is still a line they type themselves.
 
 from __future__ import annotations
 
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -41,6 +42,16 @@ __all__ = ["explain"]
 #: own line and the MathSlate frame that refused it; a deep SymPy stack is
 #: noise that crowds out both.
 _MAX_FRAMES: int = 12
+
+# Common credential shapes and assignments are removed before evidence leaves
+# the machine. This is deliberately conservative: traceback source lines are
+# useful for a repair, but a line assigning a key or token is not.
+_SECRET_VALUE = re.compile(
+    r"(?i)\b(api[_-]?key|access[_-]?token|password|secret)\b"
+    r"(\s*[:=]\s*)([^\s,;]+)"
+)
+_PROVIDER_KEY = re.compile(r"\b(?:sk-(?:ant-)?|AIza)[A-Za-z0-9_-]{8,}\b")
+_BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*\b")
 
 
 def explain(
@@ -132,7 +143,7 @@ def repair_suggestion(
         [
             f"This was written to answer: {suggestion.question.strip()}",
             "It did not work. The code:",
-            suggestion.code.strip(),
+            _redact(suggestion.code.strip()),
             _report(error, None),
         ]
     )
@@ -199,7 +210,7 @@ def _report(error: BaseException | None, code: str | None) -> str:
     """The evidence handed to the model: the error, the call site, the stack."""
     lines: list[str] = []
     if code is not None:
-        lines += ["The code:", "", code.strip(), ""]
+        lines += ["The code:", "", _redact(code.strip()), ""]
     if error is None:
         lines.append(
             "This code has not been run. Say whether it is right, and if it is "
@@ -213,13 +224,13 @@ def _report(error: BaseException | None, code: str | None) -> str:
         else "This came from Python or SymPy, not from MathSlate's own checks."
     )
     lines += [
-        f"{type(error).__name__}: {error}",
+        f"{type(error).__name__}: {_redact(str(error))}",
         "",
         origin,
     ]
     call_site = _call_site(error)
     if call_site and code is None:
-        lines += ["", "The line that failed:", "", call_site]
+        lines += ["", "The line that failed:", "", _redact(call_site)]
     stack = _stack(error)
     if stack:
         lines += ["", "Traceback (most recent call last):", stack]
@@ -261,11 +272,40 @@ def _call_site(error: BaseException) -> str | None:
 
 
 def _stack(error: BaseException) -> str:
-    """A trimmed traceback. Deep SymPy frames crowd out the two that matter."""
+    """A trimmed traceback with local paths and source text removed.
+
+    File names, line numbers and function names retain enough structure to tell
+    caller code from MathSlate internals. Absolute directories and the source
+    line duplicated by ``_call_site`` are unnecessary identifying context.
+    """
     frames = traceback.extract_tb(error.__traceback__)
     if not frames:
         return ""
-    return "".join(traceback.format_list(frames[-_MAX_FRAMES:])).rstrip()
+    return "\n".join(
+        f'  File "{_safe_filename(frame.filename)}", line {frame.lineno}, '
+        f"in {frame.name}"
+        for frame in frames[-_MAX_FRAMES:]
+    )
+
+
+def _safe_filename(filename: str) -> str:
+    """Keep package-relative context, otherwise reveal only the file name."""
+    path = Path(filename)
+    try:
+        resolved = path.resolve()
+        package = Path(_PACKAGE_ROOT)
+        if resolved.is_relative_to(package):
+            return (Path("mathslate") / resolved.relative_to(package)).as_posix()
+    except (OSError, ValueError):
+        pass
+    return path.name or "<interactive>"
+
+
+def _redact(text: str) -> str:
+    """Remove recognisable credentials from exception messages and source."""
+    hidden = _SECRET_VALUE.sub(lambda match: f"{match.group(1)}{match.group(2)}[hidden]", text)
+    hidden = _PROVIDER_KEY.sub("[hidden]", hidden)
+    return _BEARER_TOKEN.sub("Bearer [hidden]", hidden)
 
 
 #: This package's own directory. Matching on the *path* rather than on the

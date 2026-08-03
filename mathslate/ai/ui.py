@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ..errors import MathSlateError, UnsupportedInputError
@@ -243,10 +243,16 @@ def assistant(question: str = "", *, about: object | None = None) -> AssistantPa
     def run_suggestion(_button: Any) -> None:
         if panel.suggestion is None:
             return
+        visible_code = code.value.strip()
+        if not visible_code:
+            set_status("There is no code to run.", "error")
+            return
         output.clear_output()
         try:
-            panel.suggestion.validate()
-            scope = panel.suggestion.run(show_code=False)
+            current = replace(panel.suggestion, code=visible_code)
+            current.validate()
+            scope = current.run(show_code=False)
+            panel.suggestion = current
             with output:
                 from IPython.display import display
 
