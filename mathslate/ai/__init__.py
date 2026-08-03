@@ -35,6 +35,7 @@ from .providers import (
     available_providers,
     resolve_provider,
 )
+from .describe import describe, facts
 from .explain import explain, install_hint
 from .tools import TOOLS, Tool, call, tool_names, tool_schemas
 from .suggest import (
@@ -53,6 +54,8 @@ from .ui import AssistantPanel, assistant
 __all__ = [
     "ask",
     "explain",
+    "describe",
+    "facts",
     "install_hint",
     "check_connection",
     "assistant",
