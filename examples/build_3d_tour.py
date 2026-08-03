@@ -74,7 +74,9 @@ CELLS: list[str] = [
         Two free symbols create a 3D surface by default.
         """
     ),
-    "plot(x**2 - y**2, title='Saddle')",
+    "plot(x**2 - y**2, (x, -5, 5), (y, -5, 5), title='Saddle')",
+    "plot(x * exp(-(x**2 + y**2)), (x, -3, 3), (y, -3, 3), title='Gaussian Peak and Dip')",
+    "plot(sin(x) + cos(y), (x, -10, 10), (y, -10, 10), title='Sin-Cos Surface')",
     md(
         """
         You can explicitly set the range for the two variables.
