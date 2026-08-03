@@ -56,6 +56,44 @@ class TestRestrictedExecution:
         with pytest.raises(UnsupportedInputError, match=word):
             _suggestion(code).run()
 
+    @pytest.mark.parametrize(
+        "code",
+        [
+            # `sympify` on a string `eval`s it, so a string argument to any
+            # allowlisted callable that sympifies its input is arbitrary code —
+            # the allowlist waves it through as a single Constant node.
+            "solve(\"__import__('os').system('echo pwned')\")",
+            "plot(\"__import__('os')\")",
+            "analyze(\"().__class__.__base__.__subclasses__()\")",
+            "integrate(\"__import__('os')\")",
+            "Eq(\"().__class__\", 0)",
+            # sympify recurses into containers, so a string buried in a range
+            # tuple or a nested call is evaluated too.
+            "plot([sin(x)], (x, \"__import__('os')\", 10))",
+            "dataset({'x': solve(\"__import__('os')\")})",
+        ],
+    )
+    def test_a_string_that_sympify_would_evaluate_is_refused(self, code: str) -> None:
+        """The restricted allowlist checks what code *names*; a string literal
+        that reaches `sympify` is code the allowlist never sees."""
+        with pytest.raises(UnsupportedInputError, match="evaluate"):
+            _suggestion(code).run()
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            # symbols()/Symbol() read a string as a name, never sympify it.
+            "result = symbols('a b')",
+            "result = Symbol('theta')",
+            # dataset() reads string dict keys as column names, never sympifies.
+            "result = dataset({'x': [0, 1, 2], 'y': [1.0, 3.0, 5.0]})",
+            # keyword values are never sympified.
+            "result = plot(sin(x), title='My Plot', kind='scatter', verbose=False)",
+        ],
+    )
+    def test_strings_that_cannot_reach_sympify_are_allowed(self, code: str) -> None:
+        _suggestion(code).run(show_code=False)
+
     def test_a_supplied_namespace_cannot_restore_builtins(self) -> None:
         scope = {"__builtins__": __builtins__, "os": os}
         with pytest.raises(UnsupportedInputError, match="system"):
