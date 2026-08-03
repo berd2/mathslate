@@ -290,6 +290,39 @@ class TestEveryEntryPointAndKindHonoursThem:
         finally:
             interact.release_all()
 
+    def test_animate_refuses_a_keyword_plot_does_not_take(self) -> None:
+        """`animate()` takes **kwargs, so a typo used to draw the wrong picture.
+
+        `plot(sin(x), tittle="Moving")` raises TypeError; `animate()` accepted
+        the same misspelling and returned an untitled animation. An option that
+        ignores the value it was given is a bug at either entry point.
+        """
+        from mathslate import animate, slider
+        from mathslate.ui import interact
+
+        a = slider(1, 3, default=2, name="anim_view_c")
+        try:
+            with pytest.raises(UnsupportedInputError, match="tittle"):
+                animate(a * sin(x), (x, -6, 6), tittle="Moving", verbose=False)
+        finally:
+            interact.release_all()
+
+    def test_animate_accepts_every_keyword_plot_does(self) -> None:
+        """The lists that had to be kept in step by hand are now derived.
+
+        `mesh`/`xlim`/`ylim`/`zlim` were dropped from every animation once
+        because they were added to `plot()` and to neither of `animate()`'s two
+        hand-written name lists. This asserts the coverage itself, so the next
+        keyword cannot repeat it.
+        """
+        import inspect
+
+        from mathslate import api
+
+        reachable = api._RENDER_KEYWORDS | api._PLAN_KEYWORDS | {"verbose"}
+        plot_keywords = set(inspect.signature(api.plot).parameters) - {"obj", "ranges"}
+        assert plot_keywords <= reachable
+
     @pytest.mark.parametrize(
         "build",
         [
@@ -379,6 +412,30 @@ class TestLiveRangeResampling:
         result = plot(sin(x), verbose=False)
         with pytest.raises(UnsupportedInputError, match="marimo"):
             result.range_controls()
+
+    def test_a_slider_driven_plot_refuses_to_resample_rather_than_lose_its_frames(
+        self,
+    ) -> None:
+        """Silently dropping them was the danger the review looked at.
+
+        `range_controls()` already refuses an animation, so nothing inside
+        MathSlate reaches this — but `_replotted` used to answer a direct call
+        with a still picture and no word about the frames it had thrown away.
+        Carrying them instead would be worse: the fresh figure holds no frames,
+        so the result would claim to be interactive while `show_python()` emitted
+        the old domain's animation.
+        """
+        from mathslate import animate, slider
+        from mathslate.ui import interact
+
+        a = slider(1, 3, default=2, name="replot_frames_a")
+        try:
+            moving = animate(a * sin(x), (x, -6, 6), verbose=False)
+            assert moving.interactive
+            with pytest.raises(UnsupportedInputError, match="pre-rendered frames"):
+                moving._replotted(x_range=(-1.0, 1.0))
+        finally:
+            interact.release_all()
 
 
 class TestLiveRangeResamplingWidget:
@@ -977,7 +1034,7 @@ class TestRangeControlsLayoutAndSize:
         width, the label's small fixed reservation leaves the number room."""
         pytest.importorskip("ipywidgets")
         pytest.importorskip("anywidget")
-        from mathslate.result import _RANGE_CONTROLS_MIN_SIDEBAR_WIDTH
+        from mathslate.ui.range_controls import _RANGE_CONTROLS_MIN_SIDEBAR_WIDTH
 
         result = plot(sin(x) / x, (x, -10, 10), verbose=False)
         _, controls = _unwrap(result.range_controls())
