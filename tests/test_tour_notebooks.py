@@ -97,6 +97,14 @@ class TestTheJupyterTwinOpensCleanly:
         metadata = json.loads(JUPYTER_FILE.read_text(encoding="utf-8"))["metadata"]
         assert metadata["kernelspec"]["name"] == "python3"
 
+    @pytest.mark.skip(
+        reason="The tour notebook now ships stored plot previews on purpose "
+        "(commit 'docs: add plot previews and refresh tours'), so a reader who "
+        "opens it on GitHub sees rendered graphs. That is the opposite of what "
+        "this check guarded, and the file is tens of KB, not the megabytes the "
+        "guard was written against — so it is disabled rather than fighting the "
+        "decision. Re-enable it if the previews are ever stripped back out."
+    )
     def test_it_carries_no_stored_outputs(self) -> None:
         """Outputs in the file would put megabytes of Plotly into git."""
         import json
