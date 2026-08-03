@@ -111,6 +111,80 @@ def explain(
     return suggestion
 
 
+def repair_suggestion(
+    suggestion: Suggestion,
+    error: BaseException,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    verbose: bool = True,
+) -> Suggestion:
+    """A second draft of ``suggestion``, given the error the first one produced.
+
+    Backs :meth:`mathslate.ai.Suggestion.repair`. The evidence is assembled the
+    same way :func:`explain` assembles it, because it is the same evidence — but
+    the prompt asks for working code rather than a lesson, and carries the
+    original request so the repair still answers the question that was asked
+    rather than merely compiling.
+    """
+    report = "\n\n".join(
+        [
+            f"This was written to answer: {suggestion.question.strip()}",
+            "It did not work. The code:",
+            suggestion.code.strip(),
+            _report(error, None),
+        ]
+    )
+    reply, chosen, model_name = _complete(
+        _repair_prompt(trusted=_raised_by_mathslate(error)),
+        report,
+        provider,
+        model,
+        api_key,
+    )
+    code, commentary = _split(reply)
+    repaired = Suggestion(
+        code=code,
+        question=suggestion.question,
+        provider=chosen.name,
+        model=model_name,
+        commentary=commentary,
+        raw=reply,
+    )
+    if verbose:
+        if commentary:
+            safe_print(commentary)
+        safe_print(code)
+    return repaired
+
+
+def _repair_prompt(*, trusted: bool) -> str:
+    """What the model is told when its own previous answer failed."""
+    certainty = (
+        "The error came from MathSlate and is accurate. Fix the cause it names."
+        if trusted
+        else "The error did not come from MathSlate's own checks, so work out "
+        "the cause from ordinary Python and SymPy behaviour."
+    )
+    return (
+        "Your previous answer to a MathSlate question did not work. Write the "
+        "corrected version.\n\n"
+        f"{contract_reference()}\n"
+        f"{certainty}\n\n"
+        "Rules for your answer:\n"
+        "- ONE ```python fenced block containing the whole corrected snippet, "
+        "not a diff and not only the changed line.\n"
+        "- It must still answer the original question. Do not quietly solve an "
+        "easier one, and do not drop part of the request to make the error go "
+        "away.\n"
+        "- One short sentence outside the block saying what was wrong.\n"
+        "- If the request cannot be done in MathSlate at all, say so in that "
+        "sentence and give the nearest thing it can do.\n"
+        "- No imports. Do not invent MathSlate functions."
+    )
+
+
 def _last_exception() -> BaseException | None:
     """The exception Python or IPython just reported, if there was one.
 

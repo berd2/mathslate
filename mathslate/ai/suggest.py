@@ -27,7 +27,7 @@ from typing import Any, Final
 
 from .._text import safe_print
 from ..core._budget import set_budget
-from ..errors import UnsupportedInputError
+from ..errors import MathSlateError, UnsupportedInputError
 from .providers import Backend, Provider, resolve_provider
 
 __all__ = [
@@ -293,6 +293,60 @@ class Suggestion:
         mode explicitly.
         """
         _validate_code(self.code)
+
+    def repair(
+        self,
+        error: BaseException | None = None,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        verbose: bool = True,
+    ) -> "Suggestion":
+        """Ask for this code again, with the error it produced as evidence.
+
+        A model writing against an API it half-remembers gets closer on the
+        second try when it is shown what actually happened — the finding behind
+        the SageMath-agent results, and the useful half of an agent loop. The
+        loop is deliberately not closed here: this returns a *new suggestion*
+        rather than running it, so the reader still sees the code before it
+        executes. Retrying is the part worth automating; skipping the look is
+        not.
+
+        With no argument the code is validated and the refusal becomes the
+        evidence. Pass the exception from :meth:`run` to repair a failure that
+        only showed up once it ran.
+
+        Examples
+        --------
+        >>> from mathslate.ai import ask                        # doctest: +SKIP
+        >>> draft = ask("plot the tangent")                     # doctest: +SKIP
+        >>> try:                                                # doctest: +SKIP
+        ...     draft.run()
+        ... except MathSlateError as failure:
+        ...     better = draft.repair(failure)
+        """
+        from .explain import repair_suggestion
+
+        if error is None:
+            try:
+                self.validate()
+            except MathSlateError as refusal:
+                error = refusal
+            else:
+                raise UnsupportedInputError(
+                    "there is nothing to repair: this code passes validation. "
+                    "If it failed when it ran, pass that error — "
+                    "suggestion.repair(err)."
+                )
+        return repair_suggestion(
+            self,
+            error,
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            verbose=verbose,
+        )
 
     def run(
         self,

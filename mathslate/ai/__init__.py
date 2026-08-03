@@ -37,6 +37,7 @@ from .providers import (
 )
 from .describe import describe, facts
 from .explain import explain, install_hint
+from .fitting import fit_evidence, suggest_model
 from .tools import TOOLS, Tool, call, tool_names, tool_schemas
 from .suggest import (
     RunResult,
@@ -56,6 +57,8 @@ __all__ = [
     "explain",
     "describe",
     "facts",
+    "suggest_model",
+    "fit_evidence",
     "install_hint",
     "check_connection",
     "assistant",
