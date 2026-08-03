@@ -1953,6 +1953,145 @@ cannot be added without the assistant being told in the same commit. It is
 short because the API is small — which is the argument for keeping the API
 small (PRD goal 5).
 
+#### 13.5.1 Asking for something other than code
+
+`ask()` writes code you then read. The rest of the module divides along one
+line: whether the model is being asked to **produce** something you must check,
+or to **read** something MathSlate has already computed. The second is the safer
+job, and most of what follows is on that side.
+
+**`explain()` — what went wrong, and the line that fixes it.** A beginner's
+first mistakes are shape mistakes, and MathSlate already answers them precisely;
+what is missing is turning the paragraph back into code.
+
+```text
+plot(sin(x), 0, 6.28)
+# TypeError: a range must be written (symbol, lo, hi); got 0
+
+from mathslate.ai import explain
+explain()
+```
+
+With no argument it reads the exception Python just reported, so the call after
+a failed cell is simply `explain()`. Pass an exception to explain one you
+caught, or `code=` to have a snippet reviewed without running it.
+
+The error message is the evidence rather than the model's memory of MathSlate.
+When MathSlate raised it the message is authoritative and the model is told to
+turn it into a corrected line; when it came from elsewhere — a `SyntaxError`
+from `solve(x**2 - 4 = 0)`, a `TypeError` from inside SymPy — the model is
+reasoning from general Python knowledge and is asked to say so. Which half
+applies is decided by *which frame raised*, not by the exception's class: a
+mis-shaped range raises a plain `TypeError` on purpose (§4.1), and that is
+exactly the case this exists for.
+
+**`describe()` — what the answer means.** The roots are already solved and the
+discontinuities already found. Only the sentence saying what they amount to is
+missing, and that needs no arithmetic:
+
+```text
+from mathslate.ai import describe
+describe(analyze(x**3 - 3*x))
+describe(plot(tan(x)), "why is the line broken?")
+```
+
+The model is given the finished numbers and never computes. `facts()` is what
+it is given, and is worth reading on its own — it is the honest answer to "what
+did you send?":
+
+```python
+from mathslate.ai import facts
+
+report = facts(analyze(x**3 - 3*x))
+print(report["roots"]["exact"], report["roots"]["approximate"])
+```
+
+Every property carries `approximate` and the `method` behind it, so a solved
+answer and a sampled one are never presented alike. This is the one place in
+the module where a model's reply is shown as an answer rather than as a draft —
+and `Analysis.rows()`, `Table.text()` and `PlotResult.summary()` remain the same
+facts written by hand, needing no network at all.
+
+**`Suggestion.repair()` — a second try, with the error as evidence.** A model
+writing against a half-remembered API gets closer once it is shown what actually
+happened:
+
+```text
+draft = ask("plot the tangent")
+try:
+    draft.run()
+except MathSlateError as failure:
+    better = draft.repair(failure)
+```
+
+The loop is deliberately left open. `repair()` returns a new `Suggestion` rather
+than running it, because retrying is the part worth automating and skipping the
+look is not. The original question travels with the error, so a repair that
+quietly solves an easier problem is refused by the prompt.
+
+**`ask(..., about=result)` — a follow-up that has an *it*.**
+
+```text
+drawn = plot(sin(x)/x)
+ask("show the same thing on a log scale", about=drawn)
+```
+
+What is sent is the same computed summary `facts()` returns. The context is
+*named* rather than collected: nothing about your session leaves the machine
+because a question was asked near it. `assistant(question, about=...)` threads
+the same context through the panel.
+
+**`suggest_model()` — which curve to fit.** Choosing the model is the step
+before the mathematics, and the one a beginner has least to go on. The shape is
+in the numbers, so MathSlate measures it rather than asking the model to guess:
+a family is whatever transform straightens the data.
+
+```python
+import numpy as np
+from mathslate.ai import fit_evidence
+
+xs = np.linspace(1.0, 5.0, 20)
+readings = dataset({"x": xs, "y": 2 * np.exp(0.7 * xs)})
+
+straightness = fit_evidence(readings)["straightness"]
+print(max((name for name, r in straightness.items() if r),
+          key=lambda name: straightness[name]["r"]))
+```
+
+On exponential data `log(y) ~ x` is 1.000 while the others sit near 0.94, so the
+family is a measurement rather than an opinion. Each figure reports `rows_used`
+against `of`, because `log` drops every non-positive value: on data crossing
+zero the exponential correlation describes the positive tail alone, and a tail
+is easily straighter than the whole. `suggest_model(readings)` hands those
+numbers to the model, which names the family and writes the `.fit(...)` call.
+
+#### 13.5.2 MathSlate as a tool for an outside agent
+
+Everything above points outward — MathSlate asks a model. `mathslate.ai.tools`
+points inward: an agent hands MathSlate an expression and gets computed
+answers instead of a plausible recollection of them.
+
+```python
+from mathslate.ai import call, tool_names
+
+print(tool_names())
+print(call("mathslate_analyze", {"expression": "x**2 - 2"})["roots"]["exact"])
+```
+
+`tool_schemas("anthropic")` and `tool_schemas("openai")` emit the definitions in
+either provider's shape, generated from one description. `mathslate_plot`
+returns no image — a summary, the notes MathSlate attached, and the equivalent
+plain program.
+
+Arguments arrive from a model and reach SymPy, where a string is evaluated as
+code, so a tool call is given exactly the trust a generated suggestion is given:
+none. Each request is assembled into MathSlate source, put through the same
+allowlist as a suggestion, and run in the same isolated process under the same
+wall-clock budget. Symbol names must be identifiers and bounds are re-emitted as
+numbers, so neither can carry source. A refusal comes back as `{"error": ...}`
+rather than raising, because the caller is an agent that can read it and correct
+itself.
+
 ### 13.6 Worksheets
 
 ```python

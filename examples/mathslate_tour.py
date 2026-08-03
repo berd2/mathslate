@@ -59,7 +59,7 @@ def _():
     import mathslate
 
     print(f"MathSlate {mathslate.__version__} · {frontend_report()}")
-    return (Abs, Eq, Matrix, Rational, analyze, animate, apart, cancel, cos, dataset, diff, exp, expand, factor, floor, gcd, get_verbose, integrate, limit, nsolve, plot, polar, release, release_all, set_verbose, simplify, sin, slider, solve, solveset, sqrt, symbols, t, table, tan, together, trigsimp, x, y, z)
+    return (Abs, Eq, Matrix, Rational, analyze, animate, apart, cancel, cos, dataset, diff, exp, expand, factor, floor, gcd, get_verbose, integrate, limit, n, nsolve, plot, polar, release, release_all, set_verbose, simplify, sin, slider, solve, solveset, sqrt, symbols, t, table, tan, together, trigsimp, x, y, z)
 
 
 @app.cell
@@ -1064,6 +1064,109 @@ def _(mo):
         tour never sends a request or consumes provider quota.
         """
     )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        Writing code is one job. Most of the module does the other one —
+        reading what MathSlate has **already** worked out. That needs no
+        arithmetic from a model, so it cannot go wrong the same way:
+
+        ```python
+        plot(sin(x), 0, 6.28)          # TypeError: a range is (symbol, lo, hi)
+        explain()                      # ...and here is the corrected line
+
+        describe(analyze(x**3 - 3*x))  # prose about roots already solved
+        ask("now on a log scale", about=drawn)   # a follow-up with an "it"
+        draft.repair(failure)          # a second try, error as evidence
+        suggest_model(readings)        # the data picks the curve to fit
+        ```
+
+        `explain()` reads the exception Python just reported, so after a failed
+        cell the call is simply `explain()`. The error message is the evidence
+        rather than the model's memory of MathSlate — and when MathSlate raised
+        it, the model is told to trust it rather than re-diagnose it.
+        """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        Two of these need no provider at all, because the computing is
+        MathSlate's and only the wording would have been the model's.
+        `facts()` is exactly what `describe()` would send — the honest answer
+        to "what did you share?" — and every property carries whether it was
+        *solved* or *sampled*:
+        """
+    )
+    return
+
+
+@app.cell
+def _(analyze, x):
+    from mathslate.ai import facts
+
+    report = facts(analyze(x**3 - 3*x))
+    (report["roots"]["exact"], report["roots"]["approximate"])
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        And `fit_evidence()` is the measurement behind `suggest_model()`: a
+        model family is whatever transform straightens the data, so MathSlate
+        measures the straightening rather than asking a model to guess. On
+        exponential readings `log(y) ~ x` lands on 1.000 while the others sit
+        near 0.94 — an answer, not an opinion.
+        """
+    )
+    return
+
+
+@app.cell
+def _(dataset, n, np):
+    from mathslate.ai import fit_evidence
+
+    _xs = np.linspace(1.0, 5.0, 20)
+    _readings = dataset({"x": _xs, "y": 2 * np.exp(0.7 * _xs)})
+    _straightness = fit_evidence(_readings)["straightness"]
+    max((n for n, r in _straightness.items() if r),
+        key=lambda n: _straightness[n]["r"])
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        Everything above points outward — MathSlate asking a model.
+        `mathslate.ai.tools` points inward: an agent such as Claude or ChatGPT
+        hands MathSlate an expression and gets a **computed** answer instead of
+        a plausible recollection of one, with `approximate` and the method
+        attached so it knows how far to trust each line.
+
+        Arguments arriving from a model are given exactly the trust a generated
+        suggestion is given — none. Each one is put through the same allowlist
+        and the same isolated process before anything is evaluated.
+        """
+    )
+    return
+
+
+@app.cell
+def _():
+    from mathslate.ai import call, tool_names
+
+    (tool_names(),
+     call("mathslate_analyze", {"expression": "x**2 - 2"})["roots"]["exact"])
     return
 
 

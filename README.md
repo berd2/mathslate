@@ -292,6 +292,35 @@ network; the test suite asserts that in a subprocess. `ask()` returns code, it
 does not execute it. `Suggestion.run()` validates a restricted MathSlate subset
 by default; unrestricted Python requires the explicit `unsafe=True` escape hatch.
 
+Writing code is one job. Most of the module does the other one — reading what
+MathSlate has already worked out, which needs no arithmetic from a model and so
+cannot be got wrong the same way:
+
+```python
+plot(sin(x), 0, 6.28)            # TypeError: a range must be (symbol, lo, hi)
+explain()                        # ...and here is the corrected line
+
+describe(analyze(x**3 - 3*x))    # prose about roots that are already solved
+ask("now on a log scale", about=drawn)   # a follow-up that has an "it"
+draft.repair(failure)            # a second try, with the error as evidence
+suggest_model(readings)          # the transform that straightens the data picks the fit
+```
+
+`explain()` reads the exception Python just reported, so the call after a failed
+cell is simply `explain()` — and the error message is the evidence, not the
+model's memory of MathSlate. `describe()` is given the finished numbers and told
+never to compute; every property it sees carries whether it was *solved* or
+*sampled*.
+
+Pointing the other way, `mathslate.ai.tools` makes MathSlate a tool an outside
+agent can call, so Claude or ChatGPT gets computed roots rather than a plausible
+recollection of them — with `approximate` and the method attached, so it knows
+how far to trust each one. Arguments from a model are given exactly the trust a
+generated suggestion is given: none.
+
+See [the manual](docs/manual.md#1351-asking-for-something-other-than-code) for
+the whole of it.
+
 ```python
 from mathslate.classroom import worksheet
 worksheet([

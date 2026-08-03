@@ -242,6 +242,24 @@ print(ask("plot the tangent over one period").code)   # 읽은 후 실행
 
 Claude, OpenAI 또는 Gemini 중 하나를 설치하고 키를 설정하세요. 제공업체의 환경 변수로 설정하거나 `ask()`/`configure()`에 `api_key=`를 함께 전달할 수 있습니다. **코어 패키지는 이를 절대 임포트하지 않으며** 완벽하게 오프라인으로 작동합니다. 이는 학교 네트워크와 같은 제한된 환경에서 중요하며, 테스트 제품군은 하위 프로세스에서 이를 검증합니다. `ask()`는 코드를 반환할 뿐 실행하지는 않습니다. `Suggestion.run()`은 기본적으로 제한된 MathSlate 부분집합만 검증하여 실행하며, 제약 없는 Python 실행은 `unsafe=True`라는 명시적 이스케이프 해치를 통해서만 가능합니다.
 
+코드를 쓰는 것은 한 가지 일일 뿐입니다. 모듈의 대부분은 다른 일 — MathSlate가 **이미 계산해 둔 것을 읽는 일** — 을 합니다. 모델에게 산술을 시키지 않으므로, 같은 방식으로 틀릴 수가 없습니다.
+
+```python
+plot(sin(x), 0, 6.28)            # TypeError: 범위는 (기호, 최소, 최대) 형태여야 합니다
+explain()                        # ...그리고 고친 코드는 이것입니다
+
+describe(analyze(x**3 - 3*x))    # 이미 풀린 근에 대한 설명
+ask("이제 로그 스케일로", about=drawn)     # 지시 대상이 있는 후속 질문
+draft.repair(failure)            # 에러를 근거로 한 번 더
+suggest_model(readings)          # 데이터를 직선으로 펴는 변환이 모델을 고릅니다
+```
+
+`explain()`은 파이썬이 방금 보고한 예외를 읽으므로 실패한 셀 다음에는 그냥 `explain()`이면 됩니다 — 그리고 근거가 되는 것은 모델이 기억하는 MathSlate가 아니라 **에러 메시지 자체**입니다. `describe()`는 완성된 숫자를 받고 계산하지 말라는 지시를 받습니다. 모델이 보는 모든 속성에는 그것이 *풀어낸* 값인지 *샘플링한* 값인지가 함께 실려 있습니다.
+
+반대 방향으로, `mathslate.ai.tools`는 MathSlate를 외부 에이전트가 호출할 수 있는 도구로 만듭니다. Claude나 ChatGPT가 그럴듯한 기억 대신 계산된 근을 받으며, `approximate`와 그 근거가 함께 오므로 어디까지 신뢰할지 알 수 있습니다. 모델에서 온 인자에는 생성된 제안과 정확히 같은 신뢰 — 즉 없음 — 만 부여됩니다.
+
+전체 내용은 [매뉴얼](docs/manual_ko.md#1351-코드-말고-다른-것을-묻기)을 참고하세요.
+
 ```python
 from mathslate.classroom import worksheet
 worksheet([
