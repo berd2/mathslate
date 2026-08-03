@@ -28,7 +28,7 @@ from typing import Any, Final
 from .._text import safe_print
 from ..core._budget import set_budget
 from ..errors import UnsupportedInputError
-from .providers import Backend, resolve_provider
+from .providers import Backend, Provider, resolve_provider
 
 __all__ = [
     "check_connection",
@@ -646,6 +646,54 @@ def _safe_assignment_target(target: ast.expr) -> bool:
     return False
 
 
+def contract_reference() -> str:
+    """The API description both the writing and the diagnosing prompts share.
+
+    Built from :data:`mathslate.core.dispatch.KINDS` rather than written out
+    beside it, so a kind cannot be added without every prompt learning about it
+    in the same commit — which is the point §22 of the manual makes about this
+    module, and applies as much to explaining a mistake as to writing code.
+    """
+    from ..core.dispatch import KINDS
+
+    return textwrap.dedent(
+        f"""\
+        MathSlate wraps SymPy, NumPy and Plotly behind one function, `plot()`,
+        which infers what was meant. Assume `from mathslate import *` has run:
+        `plot`, `polar`, `analyze`, `table`, `slider`, `animate`, `dataset`,
+        `show_python`, the SymPy functions (`sin`, `cos`, `exp`, `sqrt`, `log`,
+        `floor`, `Abs`, `diff`, `integrate`, `solve`, `Eq`, `Matrix`, ...) and
+        the symbols `x, y, z, t, n, k, theta` all already exist.
+
+        The dispatch contract — one rule: a `list` means several things
+        together, a `tuple` means one vector-valued object.
+
+          plot(sin(x)/x)                      a 2D curve
+          plot([sin(x), cos(x)])              two curves overlaid
+          plot((cos(t), sin(t)))              one parametric curve
+          plot((cos(t), sin(t), t))           a 3D space curve
+          plot(x*y)                           a surface
+          plot(x*y, kind="contour")           the same, flat
+          plot(Eq(x**2 + y**2, 4))            an implicit curve
+          polar(1 + cos(t))                   r = f(theta)
+          plot(Matrix([[2, 1], [1, 3]]))      a matrix as a transformation
+          plot(sin(x), (x, 0, 6.28))          an explicit range
+          plot([1.0, 2.0, 3.0], kind="hist")  a histogram
+
+        A range is always the triple `(symbol, lo, hi)` — `plot(sin(x), (x, 0,
+        6.28))`, never `plot(sin(x), 0, 6.28)`.
+
+        Other entry points:
+          analyze(expr)      roots, extrema, asymptotes, symmetry, period
+          table(expr)        the same function as a table of values
+          a = slider(-5, 5)  then plot(a*sin(x)) — no callback needed
+          dataset({{...}})     then .fit(a*x + b) to fit a symbolic model
+
+        Plot kinds that can come back: {", ".join(KINDS)}.
+        """
+    )
+
+
 def system_prompt() -> str:
     """What the model is told about MathSlate. Built from the real contract."""
     from ..core.dispatch import KINDS
@@ -696,6 +744,63 @@ def system_prompt() -> str:
     )
 
 
+def _complete(
+    system: str,
+    question: str,
+    provider: str | None,
+    model: str | None,
+    api_key: str | None,
+) -> tuple[str, Provider, str]:
+    """Resolve a provider, send one message, and return ``(reply, provider, model)``.
+
+    Every entry point that talks to a model goes through here, so credential
+    resolution — a per-call key not inheriting a session provider, a saved key
+    being found for the named one, the key never reaching an error message —
+    is decided in one place rather than re-implemented per feature.
+    """
+    effective_key = api_key or _DEFAULTS["api_key"]
+    # A per-call key does not inherit a session provider: the key may belong to
+    # another service. With several SDKs installed, resolve_provider() will ask
+    # the caller to name the provider instead of exposing the credential.
+    provider_name = provider
+    if provider_name is None and api_key is None:
+        provider_name = _DEFAULTS["provider"]
+    saved = None
+    if effective_key is None and api_key is None:
+        from .credentials import load_credential
+
+        saved = load_credential(provider_name)
+        if saved is not None:
+            provider_name = saved.provider
+            effective_key = saved.api_key
+    chosen = resolve_provider(provider_name, api_key=effective_key)
+    model_name = (
+        model
+        or _DEFAULTS["model"]
+        or (saved.model if saved is not None else None)
+        or chosen.default_model
+    )
+    backend: Backend = chosen.build(effective_key)
+
+    try:
+        reply = backend.complete(system, question, model_name)
+    except Exception as exc:
+        detail = str(exc).strip()
+        if effective_key:
+            detail = detail.replace(effective_key, "[hidden]")
+        raise UnsupportedInputError(
+            f"{chosen.name.title()} did not complete the request "
+            f"({type(exc).__name__}: {detail or 'no detail'}). "
+            "Check the API key, model access, quota, and network, then retry."
+        ) from exc
+    if not reply or not reply.strip():
+        raise UnsupportedInputError(
+            f"provider {chosen.name!r} returned no text. Retry the request, "
+            "check the provider status, or choose another model."
+        )
+    return reply, chosen, model_name
+
+
 def ask(
     question: str,
     provider: str | None = None,
@@ -714,48 +819,9 @@ def ask(
     if not question.strip():
         raise UnsupportedInputError("ask() needs a question.")
 
-    effective_key = api_key or _DEFAULTS["api_key"]
-    # A per-call key does not inherit a session provider: the key may belong to
-    # another service. With several SDKs installed, resolve_provider() will ask
-    # the caller to name the provider instead of exposing the credential.
-    provider_name = provider
-    if provider_name is None and api_key is None:
-        provider_name = _DEFAULTS["provider"]
-    saved = None
-    if effective_key is None and api_key is None:
-        from .credentials import load_credential
-
-        saved = load_credential(provider_name)
-        if saved is not None:
-            provider_name = saved.provider
-            effective_key = saved.api_key
-    chosen = resolve_provider(
-        provider_name, api_key=effective_key
+    reply, chosen, model_name = _complete(
+        system_prompt(), question, provider, model, api_key
     )
-    model_name = (
-        model
-        or _DEFAULTS["model"]
-        or (saved.model if saved is not None else None)
-        or chosen.default_model
-    )
-    backend: Backend = chosen.build(effective_key)
-
-    try:
-        reply = backend.complete(system_prompt(), question, model_name)
-    except Exception as exc:
-        detail = str(exc).strip()
-        if effective_key:
-            detail = detail.replace(effective_key, "[hidden]")
-        raise UnsupportedInputError(
-            f"{chosen.name.title()} did not complete the request "
-            f"({type(exc).__name__}: {detail or 'no detail'}). "
-            "Check the API key, model access, quota, and network, then retry."
-        ) from exc
-    if not reply or not reply.strip():
-        raise UnsupportedInputError(
-            f"provider {chosen.name!r} returned no text. Retry the request, "
-            "check the provider status, or choose another model."
-        )
     code, commentary = _split(reply)
     suggestion = Suggestion(
         code=code,

@@ -35,6 +35,7 @@ from .providers import (
     available_providers,
     resolve_provider,
 )
+from .explain import explain, install_hint
 from .suggest import (
     RunResult,
     Suggestion,
@@ -42,6 +43,7 @@ from .suggest import (
     check_connection,
     configure,
     configured,
+    contract_reference,
     forget,
     system_prompt,
 )
@@ -49,6 +51,8 @@ from .ui import AssistantPanel, assistant
 
 __all__ = [
     "ask",
+    "explain",
+    "install_hint",
     "check_connection",
     "assistant",
     "AssistantPanel",
@@ -62,4 +66,5 @@ __all__ = [
     "available_providers",
     "resolve_provider",
     "system_prompt",
+    "contract_reference",
 ]
