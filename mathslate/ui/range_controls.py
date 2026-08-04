@@ -34,7 +34,7 @@ from ..core.sampling import DEFAULT_CONFIG
 from ..core.surfaces import GRID as DEFAULT_GRID
 from ..errors import MathSlateError, SamplingError, UnsupportedInputError
 from ..render import axes, plotly_backend
-from ..render.options import DEFAULT_MESH_LINES
+from ..render.options import DEFAULT_MESH_LINES, _positive_pixels
 from .adapters import Frontend, detect_frontend
 
 if TYPE_CHECKING:
@@ -293,12 +293,10 @@ def build(
             "FigureWidget does not accept frames. Use xlim/ylim for the "
             "window, or Slider.widget() for live recomputation."
         )
-    for name, value in (("width", width), ("height", height)):
-        if value is not None and not int(value) > 0:
-            raise UnsupportedInputError(
-                f"range_controls({name}={value!r}) must be a positive "
-                "number of pixels."
-            )
+    if width is not None:
+        width = _positive_pixels(width, "range_controls(width)")
+    if height is not None:
+        height = _positive_pixels(height, "range_controls(height)")
 
     frontend = detect_frontend()
     if frontend not in (Frontend.JUPYTER, Frontend.COLAB):
@@ -845,6 +843,22 @@ def build(
             ))
         _set_pairs(*pairs)
 
+    def _log_bounds(lower: float, upper: float, axis: str) -> tuple[float, float] | None:
+        """Return Plotly's log-axis bounds, refusing an edited invalid range."""
+        if not (
+            math.isfinite(lower)
+            and math.isfinite(upper)
+            and lower > 0
+            and upper > lower
+        ):
+            warnings.warn(
+                f"{axis} log scale needs a finite, strictly positive range.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            return None
+        return math.log10(lower), math.log10(upper)
+
     def _change_y_scale(change: dict[str, Any]) -> None:
         """Keep the Y boxes in the units Plotly expects for the new scale."""
         nonlocal controller_options, syncing
@@ -853,7 +867,10 @@ def build(
         ):
             return
         if change["new"] == "log":
-            bounds = (math.log10(y_min.value), math.log10(y_max.value))
+            bounds = _log_bounds(y_min.value, y_max.value, "Y")
+            if bounds is None:
+                _y_scale_buttons["Linear"].value = True
+                return
             controller_options = replace(
                 controller_options, yscale="log", ylim=bounds
             )
@@ -882,7 +899,10 @@ def build(
         if change.get("name") != "value" or change["new"] == z_scale:
             return
         if change["new"] == "log":
-            bounds = (math.log10(z_min.value), math.log10(z_max.value))
+            bounds = _log_bounds(z_min.value, z_max.value, "Z")
+            if bounds is None:
+                _z_scale_buttons["Linear"].value = True
+                return
         else:
             bounds = (10.0 ** z_min.value, 10.0 ** z_max.value)
         z_scale = change["new"]

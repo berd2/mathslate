@@ -31,10 +31,17 @@ def spy(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         build=lambda key: Backend(),
     )
     import mathslate.ai.suggest as suggest
+    from mathslate.ai import credentials as credentials_module
 
     monkeypatch.setattr(
         suggest, "resolve_provider", lambda name, *, api_key=None: provider
     )
+    # Mocking resolve_provider does not stop _resolve_request from reaching
+    # load_credential first — .repair() below omits provider/model, so
+    # without this a developer's real saved credential decides model_name
+    # (via saved.model) ahead of the fake provider's own default, on a
+    # machine with one stored through assistant()'s "remember" option.
+    monkeypatch.setattr(credentials_module, "load_credential", lambda *_: None)
     return seen
 
 

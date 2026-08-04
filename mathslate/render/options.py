@@ -12,7 +12,8 @@ both sides call the same methods.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 
 from ..core.dispatch import PlotPlan
 from ..errors import UnsupportedInputError
@@ -131,12 +132,13 @@ def _positive_pixels(value: object, name: str) -> int:
         raise UnsupportedInputError(
             f"{name} must be a number of pixels; got {value!r}."
         )
-    if not value > 0:
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric < 10 or not numeric.is_integer():
         raise UnsupportedInputError(
             f"{name}={value!r} is not a size a figure can be drawn at; "
-            "give a positive number of pixels, or None for the default."
+            "give a whole number of at least 10 pixels, or None for the default."
         )
-    return int(value)
+    return int(numeric)
 
 
 @dataclass(frozen=True)
@@ -164,12 +166,18 @@ class RenderOptions:
     #: length on every zoom but positions scene labels in the projection, so
     #: they crowd as the camera comes in and nothing recomputes them.
     ticks: bool | int | None = None
-    #: Figure size in pixels. ``None`` on either falls back to whatever
-    #: :func:`set_plot_size` last established — the height to
-    #: :data:`DEFAULT_HEIGHT`, the width to unset, which is what lets the
-    #: figure fill the cell rather than sit at a fixed size inside it.
-    width: int | None = None
-    height: int | None = None
+    #: Figure size in pixels, resolved when a plot is created. A result keeps
+    #: this snapshot so later calls to :func:`set_plot_size` affect later plots
+    #: without changing the program returned by an existing result's
+    #: :meth:`~mathslate.result.PlotResult.python`. ``_render_options`` always
+    #: passes both explicitly, so these factories only run for the bare
+    #: ``RenderOptions()`` a few call sites fall back to when no options were
+    #: built at all — reading :func:`get_plot_size` here instead of freezing
+    #: today's default in the field itself is what keeps *that* path honouring
+    #: a ``set_plot_size()`` call too, rather than a stale number from whenever
+    #: this module was imported.
+    width: int | None = field(default_factory=lambda: get_plot_size()[0])
+    height: int | None = field(default_factory=lambda: get_plot_size()[1])
     #: View-window overrides. A range like ``(x, -10, 10)`` sets the *domain* —
     #: where the function is sampled; these set the *window* — what the axis
     #: shows. They differ whenever the two should: to undo the automatic y-clip
@@ -190,18 +198,8 @@ class RenderOptions:
         return "lines"
 
     def figure_size(self) -> tuple[int | None, int | None]:
-        """``(width, height)`` in pixels — this call's, or the notebook's.
-
-        Resolved here rather than at the point of use so the figure and the
-        program ``show_python()`` emits cannot end up different sizes, and so
-        that ``set_plot_size()`` applies to a plot built before it was called
-        only if that plot is redrawn — which is what a *default* means.
-        """
-        width, height = get_plot_size()
-        return (
-            width if self.width is None else self.width,
-            height if self.height is None else self.height,
-        )
+        """The size snapshot used by both the figure and emitted program."""
+        return self.width, self.height
 
     def tick_limit(self) -> int | None:
         """The reader's ``ticks=`` as a Plotly ``nticks``, or ``None`` for auto.

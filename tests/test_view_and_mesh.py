@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import sys
 import types
+import warnings
 from typing import Any
 
 import numpy as np
@@ -677,6 +678,27 @@ class TestSegmentControlsStayOnOneRow:
         figure_widget, controls = _unwrap(plot(sin(x), verbose=False).range_controls())
         _toggles(controls)["Points"].value = True
         assert figure_widget.data[0].mode == "markers"
+
+    @pytest.mark.parametrize(
+        "build, minimum_index, axis",
+        [
+            (lambda: plot(exp(x), verbose=False), 2, "Y"),
+            (lambda: plot(exp(x + y), verbose=False), 4, "Z"),
+        ],
+        ids=["y", "z"],
+    )
+    def test_log_scale_rejects_an_invalid_edited_range(
+        self, _colab: None, build: Any, minimum_index: int, axis: str
+    ) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        _, controls = _unwrap(build().range_controls())
+        _number_controls(controls)[minimum_index].value = -1.0
+        toggles = _toggles(controls)
+        with pytest.warns(RuntimeWarning, match=f"{axis} log scale"):
+            toggles["Log"].value = True
+        assert toggles["Log"].value is False
+        assert toggles["Linear"].value is True
 
 
 class TestSamplesControl:
@@ -1486,10 +1508,14 @@ class TestRangeControlsLayoutAndSize:
 
     @pytest.mark.parametrize("name", ["width", "height"])
     def test_a_non_positive_size_is_refused(self, name: str, _colab: None) -> None:
+        """`build()` now validates through the same `_positive_pixels` that
+        `plot(width=...)` does, rather than its own inline `> 0` check — the
+        message changed with it, from "must be a positive number of pixels"
+        to the shared "not a size a figure can be drawn at"."""
         pytest.importorskip("ipywidgets")
         pytest.importorskip("anywidget")
         result = plot(sin(x) / x, (x, -10, 10), verbose=False)
-        with pytest.raises(UnsupportedInputError, match="positive number of pixels"):
+        with pytest.raises(UnsupportedInputError, match="not a size"):
             result.range_controls(**{name: 0})
 
 

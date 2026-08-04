@@ -422,17 +422,26 @@ class TestTheAiLayer:
         """On a machine with nothing installed — which is what the message is
         for, and the only state in which it names the packages to install.
 
-        Both halves have to be forced. Reading whatever the developer's
-        environment happens to hold made this fail wherever an SDK was
-        installed (the message then names the missing *key*, correctly), and
+        Three halves have to be forced, not two. Reading whatever the
+        developer's environment happens to hold made this fail wherever an SDK
+        was installed (the message then names the missing *key*, correctly);
         on a machine with a real key in the environment `ask()` would not
-        raise at all: it would reach `backend.complete()` and bill a live
-        request to whoever ran the tests.
+        raise at all, reaching `backend.complete()` and billing a live request
+        to whoever ran the tests; and on a machine with a credential saved
+        through `assistant()`'s "remember" option, `_resolve_request` finds it
+        in the OS keyring before either of those checks even runs, naming that
+        provider's missing *SDK* instead — a third, different message, from
+        state this test never put there and has no business reading. A
+        developer's persisted key is outside its scope either way; isolate
+        the process rather than deleting the real secret (`test_ai_credentials
+        .py`'s `_no_ambient_keys` does the same for the rest of that file).
         """
         from mathslate.ai import ask
+        from mathslate.ai import credentials as credentials_module
         from mathslate.ai.providers import PROVIDERS, Provider
 
         monkeypatch.setattr(Provider, "installed", lambda self: False)
+        monkeypatch.setattr(credentials_module, "load_credential", lambda *_: None)
         for provider in PROVIDERS:
             monkeypatch.delenv(provider.env_var, raising=False)
 

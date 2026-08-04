@@ -81,7 +81,7 @@ class TestSizeOnOneCall:
         assert figure.layout.height == 800
         assert figure.layout.width is None
 
-    @pytest.mark.parametrize("bad", [0, -100])
+    @pytest.mark.parametrize("bad", [0, -100, 0.5, 10.5, float("inf")])
     def test_a_size_that_cannot_be_drawn_is_refused(self, bad: int) -> None:
         with pytest.raises(UnsupportedInputError, match="not a size"):
             plot(sin(x), height=bad, verbose=False)
@@ -131,6 +131,10 @@ class TestSetPlotSize:
         with pytest.raises(UnsupportedInputError, match="not a size"):
             set_plot_size(height=0)
 
+    def test_a_fractional_default_is_refused_before_plotly_sees_it(self) -> None:
+        with pytest.raises(UnsupportedInputError, match="not a size"):
+            set_plot_size(height=0.5)
+
 
 class TestShowPythonReproducesTheSize:
     """A figure and a program said to build it must not differ in size."""
@@ -143,6 +147,12 @@ class TestShowPythonReproducesTheSize:
         result = plot(sin(x), width=1000, height=800, verbose=False)
         emitted = _emitted(result)
         assert (emitted.layout.width, emitted.layout.height) == (1000, 800)
+
+    def test_a_later_global_default_does_not_rewrite_an_existing_result(self) -> None:
+        result = plot(sin(x), verbose=False)
+        set_plot_size(height=777)
+        assert result.plotly.layout.height == DEFAULT_HEIGHT
+        assert _emitted(result).layout.height == DEFAULT_HEIGHT
 
     @pytest.mark.parametrize(
         "build",
@@ -223,3 +233,15 @@ class TestControlsOnOnePlot:
         quiet = plot(sin(x), controls=False, verbose=False)
         assert quiet.plotly.layout.height == plain.plotly.layout.height
         assert quiet.python() == plain.python()
+
+    @pytest.mark.parametrize("choice", [False, True])
+    def test_controls_is_refused_for_a_slider_driven_plot(self, choice: bool) -> None:
+        from mathslate import slider
+        from mathslate.ui import interact
+
+        a = slider(1, 2, name="controls_on_frames")
+        try:
+            with pytest.raises(UnsupportedInputError, match="controls=.*still plot"):
+                plot(a * sin(x), controls=choice, verbose=False)
+        finally:
+            interact.release_all()

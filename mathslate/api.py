@@ -108,6 +108,10 @@ def plot(
     >>> _ = plot((sin(x), cos(x)))              # one parametric curve
     >>> _ = plot(sin(x), (x, 0, 6.28))          # explicit range
     """
+    if controls is not None and not isinstance(controls, bool):
+        raise UnsupportedInputError(
+            f"controls must be True, False, or None; got {controls!r}."
+        )
     options = _render_options(
         title=title, yscale=yscale, show_legend=show_legend, kind=kind,
         mesh=mesh, ticks=ticks, width=width, height=height,
@@ -136,6 +140,11 @@ def plot(
 
     driving = _driving_slider(obj, plan)
     if driving is not None:
+        if controls is not None:
+            raise UnsupportedInputError(
+                "controls= only applies to a still plot. A slider-driven plot "
+                "uses Plotly frames, which cannot be resampled by range controls."
+            )
         driver, note = driving
         return _interactive(
             obj, ranges, driver, options, verbose, note, play=False,
@@ -179,6 +188,7 @@ def _render_options(
     """
     if yscale not in (None, "linear", "log"):
         raise UnsupportedInputError(f"yscale must be 'linear' or 'log'; got {yscale!r}.")
+    default_width, default_height = get_plot_size()
     return RenderOptions(
         title=title,
         yscale=yscale,
@@ -186,8 +196,8 @@ def _render_options(
         kind=kind,
         mesh=_mesh_option(mesh),
         ticks=_ticks_option(ticks),
-        width=None if width is None else _positive_pixels(width, "width"),
-        height=None if height is None else _positive_pixels(height, "height"),
+        width=default_width if width is None else _positive_pixels(width, "width"),
+        height=default_height if height is None else _positive_pixels(height, "height"),
         xlim=_view_limit(xlim, "xlim"),
         ylim=_view_limit(ylim, "ylim"),
         zlim=_view_limit(zlim, "zlim"),
