@@ -50,6 +50,11 @@ jobs:
           tests/test_ai_assistant.py
           tests/test_ai_credentials.py
           tests/test_ai_explain.py
+          tests/test_ai_followup.py
+          tests/test_ai_repair_and_fitting.py
+          tests/test_v1_data_and_ai.py
+          tests/test_figure_size.py
+          tests/test_view_and_mesh.py::TestSegmentControlsStayOnOneRow
 
   full_matrix:
     name: full tests (py${{ matrix.python }}, ${{ matrix.os }})

@@ -188,6 +188,32 @@ def test_provider_errors_name_the_recovery_actions(
         ask("plot sine", provider="gemini", api_key="private-key")
 
 
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            "ServerError: 503 UNAVAILABLE. This model is currently experiencing high demand. "
+            "Check the API key, model access, quota, and network, then retry.",
+            "The provider is temporarily busy (503). Wait a moment and retry.",
+        ),
+        (
+            "429 rate limit exceeded",
+            "The provider rejected the request because its quota or rate limit was reached.",
+        ),
+        (
+            "403 API key not valid",
+            "Authentication failed. Replace the API key in Settings and try again.",
+        ),
+    ],
+)
+def test_panel_error_messages_classify_provider_failures(
+    message: str, expected: str
+) -> None:
+    from mathslate.ai.ui import _safe_error
+
+    assert _safe_error(UnsupportedInputError(message)) == expected
+
+
 def test_panel_shows_progress_and_the_generated_code(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -94,7 +94,7 @@ from .core.data import Dataset
 from .core.tables import Table
 from .result import PlotResult
 
-__version__: str = "0.1.3"
+__version__: str = "0.1.4"
 
 # --- predefined symbols (PRD 6.3) -----------------------------------------
 # Open decision 3: `import *` is permitted so that these exist, but

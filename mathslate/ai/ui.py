@@ -32,12 +32,30 @@ def _safe_error(error: Exception, secret: str = "") -> str:
     if secret:
         message = message.replace(secret, "[hidden]")
     lower = message.lower()
-    if "401" in lower or "403" in lower or "api key" in lower or "authentication" in lower:
-        return "Authentication failed. Replace the API key in Settings and try again."
+    # ``_provider_failed`` suggests checking an API key for every provider
+    # failure.  Do not treat that recovery hint as proof of an authentication
+    # failure: a Gemini 503, for example, includes those words too.
+    if "503" in lower or "high demand" in lower:
+        return "The provider is temporarily busy (503). Wait a moment and retry."
     if "429" in lower or "quota" in lower or "rate limit" in lower:
         return "The provider rejected the request because its quota or rate limit was reached."
     if "timeout" in lower or "timed out" in lower:
         return "The provider did not answer in time. Check the network and retry."
+    authentication_markers = (
+        "401",
+        "403",
+        "unauthenticated",
+        "authenticationerror",
+        "authentication error",
+        "authentication failed",
+        "invalid api key",
+        "api key not valid",
+        "incorrect api key",
+        "api_key_invalid",
+        "credential rejected",
+    )
+    if any(marker in lower for marker in authentication_markers):
+        return "Authentication failed. Replace the API key in Settings and try again."
     return message
 
 
