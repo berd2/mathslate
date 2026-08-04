@@ -188,7 +188,7 @@ CELLS: list[str] = [
     """,
     md(
         """
-        How much of the cell the graph gets is yours too. A plot is 540px tall
+        How much of the cell the graph gets is yours too. A plot is 520px tall
         by default — Plotly's own 450 is a dashboard tile's height, and in
         Jupyter a fifth of the width already goes to the live range-control
         sidebar beside the figure. `height=` changes one plot,

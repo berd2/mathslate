@@ -26,7 +26,9 @@ import plotly.graph_objects as go
 import pytest
 import sympy as sp
 
-from mathslate import cos, exp, plot, polar, sin, slider, t, tan, theta, x, y, z
+from mathslate import (
+    cos, exp, plot, polar, sin, slider, sqrt, t, tan, theta, x, y, z,
+)
 from mathslate.errors import UnsupportedInputError
 from mathslate.ui import release_all
 
@@ -573,6 +575,216 @@ class TestEveryOfferedKindCanActuallyResample:
         assert tuple(cropped.plotly.layout.yaxis.range) == (-0.5, 0.5)
 
 
+class TestSegmentControlsStayOnOneRow:
+    """`Linear`/`Log` on two lines was the report; the CSS was the cause.
+
+    Every rule in the sidebar's stylesheet spans several string literals of
+    which only the first was an f-string, so the doubled braces CSS needs
+    inside one came out *literally* in the rest. Two rules shipped as
+    ``selector {{ ... }}`` — a nested block, so the whole declaration list is
+    dropped — and they were the two that keep a segment control's buttons side
+    by side. `plot(sqrt(x))` showed it because a non-negative curve is the case
+    where a second (`Log`) button exists at all.
+    """
+
+    @pytest.fixture
+    def _colab(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stub = types.ModuleType("google.colab")
+        monkeypatch.setitem(sys.modules, "google.colab", stub)
+
+    @staticmethod
+    def _stylesheet(controls: Any) -> str:
+        import ipywidgets as widgets
+
+        return next(
+            widget.value
+            for widget in controls.children
+            if isinstance(widget, widgets.HTML)
+        )
+
+    def test_no_stray_braces_reach_the_browser(self, _colab: None) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        css = self._stylesheet(_unwrap(plot(sqrt(x), verbose=False).range_controls())[1])
+        assert "{{" not in css and "}}" not in css
+
+    def test_the_rule_that_keeps_two_buttons_side_by_side_survives(
+        self, _colab: None
+    ) -> None:
+        """It is the one that was dropped, so assert the declaration itself."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        css = self._stylesheet(_unwrap(plot(sqrt(x), verbose=False).range_controls())[1])
+        assert "flex: 1 1 0 !important" in css
+        assert "flex-wrap: nowrap !important" in css
+
+    def test_every_rule_is_balanced(self, _colab: None) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        css = self._stylesheet(_unwrap(plot(sqrt(x), verbose=False).range_controls())[1])
+        body = css[css.index(">") + 1 : css.rindex("</style>")]
+        assert body.count("{") == body.count("}")
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda: plot(sqrt(x), verbose=False),      # Linear | Log
+            lambda: plot(sin(x), verbose=False),       # Linear only
+            lambda: plot(exp(x + y), verbose=False),   # a 3D scene's Z scale
+        ],
+        ids=["log-able", "linear-only", "surface"],
+    )
+    def test_no_wrapping_togglebuttons_are_left_anywhere(
+        self, _colab: None, build: Any
+    ) -> None:
+        """ipywidgets' own `ToggleButtons` view is the wrapping one."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        _, controls = _unwrap(build().range_controls())
+        assert not _widgets(controls, "ToggleButtons")
+
+    def test_the_log_button_still_switches_the_axis(self, _colab: None) -> None:
+        """Rebuilt as an HBox, so the behaviour needs asserting again."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        figure_widget, controls = _unwrap(plot(sqrt(x), verbose=False).range_controls())
+        toggles = _toggles(controls)
+        toggles["Log"].value = True
+        assert figure_widget.layout.yaxis.type == "log"
+        toggles["Linear"].value = True
+        assert figure_widget.layout.yaxis.type != "log"
+
+    def test_one_choice_always_stays_active(self, _colab: None) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        _, controls = _unwrap(plot(sqrt(x), verbose=False).range_controls())
+        toggles = _toggles(controls)
+        assert toggles["Linear"].value is True
+        toggles["Linear"].value = False  # deselecting the only active one
+        assert toggles["Linear"].value is True
+
+    def test_points_mode_still_maps_to_the_right_trace_mode(
+        self, _colab: None
+    ) -> None:
+        """`Points` selects `scatter`, which the caption does not spell.
+
+        A segment that derived its value from its label would set `kind="points"`
+        — a value `RenderOptions.trace_mode` does not know — and quietly go on
+        drawing lines.
+        """
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        figure_widget, controls = _unwrap(plot(sin(x), verbose=False).range_controls())
+        _toggles(controls)["Points"].value = True
+        assert figure_widget.data[0].mode == "markers"
+
+
+class TestSamplesControl:
+    """The sampler's own budget, live — PRD 5.3's `initial_points`, on a slider.
+
+    Coarse is as useful as fine: dropping a curve to 50 shows the adaptive pass
+    its own scaffolding, which is what makes "adaptive" something a reader can
+    see rather than something the manual asserts.
+    """
+
+    @pytest.fixture
+    def _colab(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stub = types.ModuleType("google.colab")
+        monkeypatch.setitem(sys.modules, "google.colab", stub)
+
+    def test_raising_it_draws_more_points(self, _colab: None) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        figure_widget, controls = _unwrap(
+            plot(sin(x) / x, (x, -10, 10), verbose=False).range_controls()
+        )
+        before = len(figure_widget.data[0].x)
+        _slider(controls, "Samples").value = 1200
+        assert len(figure_widget.data[0].x) > before
+
+    def test_lowering_it_draws_fewer(self, _colab: None) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        figure_widget, controls = _unwrap(
+            plot(sin(x) / x, (x, -10, 10), verbose=False).range_controls()
+        )
+        before = len(figure_widget.data[0].x)
+        _slider(controls, "Samples").value = 50
+        assert len(figure_widget.data[0].x) < before
+
+    def test_the_chosen_density_survives_a_window_move(self, _colab: None) -> None:
+        """Otherwise the next X edit silently undoes it."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        figure_widget, controls = _unwrap(
+            plot(sin(x) / x, (x, -10, 10), verbose=False).range_controls()
+        )
+        _slider(controls, "Samples").value = 1000
+        dense = len(figure_widget.data[0].x)
+        x_min, x_max, _, _ = _number_controls(controls)
+        x_min.value, x_max.value = -2.0, 2.0
+        assert len(figure_widget.data[0].x) > dense / 2
+
+    def test_a_surface_moves_its_grid_rather_than_a_line_budget(
+        self, _colab: None
+    ) -> None:
+        """Per axis, and on its own scale: a 2000x2000 grid is four million."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        figure_widget, controls = _unwrap(plot(SADDLE, verbose=False).range_controls())
+        samples = _slider(controls, "Samples")
+        assert samples.max <= 400
+
+        samples.value = 30
+        assert figure_widget.data[0].z.shape == (30, 30)
+        samples.value = 100
+        assert figure_widget.data[0].z.shape == (100, 100)
+
+
+class TestPointsReachesTwoVariableKinds:
+    """`points=` set a budget the grid samplers never read.
+
+    `plot(x*y, points=30)` drew the stock 60x60 and said nothing about it —
+    the "option that quietly ignores the value it was given" this package
+    treats as a bug everywhere else.
+    """
+
+    def test_a_surface_honours_it(self) -> None:
+        grid = plot(SADDLE, points=30, verbose=False).plan.series[0].sample.z
+        assert grid.shape == (30, 30)
+
+    def test_a_contour_honours_it(self) -> None:
+        grid = plot(SADDLE, kind="contour", points=25, verbose=False)
+        assert grid.plan.series[0].sample.z.shape == (25, 25)
+
+    def test_an_implicit_curve_honours_it(self) -> None:
+        grid = plot(sp.Eq(x**2 + y**2, 1), points=40, verbose=False)
+        assert grid.plan.series[0].sample.z.shape == (40, 40)
+
+    def test_a_region_honours_it(self) -> None:
+        grid = plot(x**2 + y**2 < 1, points=40, verbose=False)
+        assert grid.plan.series[0].sample.z.shape == (40, 40)
+
+    def test_a_parametric_surface_honours_it(self) -> None:
+        grid = plot(TORUS, points=20, verbose=False)
+        assert grid.plan.series[0].sample.z.shape == (20, 20)
+
+    def test_each_kind_keeps_its_own_default_when_none_is_given(self) -> None:
+        """A region's 200 and a surface's 60 differ on purpose."""
+        assert plot(SADDLE, verbose=False).plan.series[0].sample.z.shape == (60, 60)
+        assert plot(
+            x**2 + y**2 < 1, verbose=False
+        ).plan.series[0].sample.z.shape == (200, 200)
+
+    def test_a_curve_budget_is_capped_before_it_becomes_a_grid(self) -> None:
+        """2000 along a line is 2000 points; 2000 square is four million."""
+        grid = plot(SADDLE, points=5000, verbose=False).plan.series[0].sample.z
+        assert grid.shape[0] < 5000
+
+    def test_a_curve_is_unaffected_by_the_cap(self) -> None:
+        assert plot(sin(x), points=3000, verbose=False).plan.total_points > 2000
+
+
 class TestLiveRangeResamplingWidget:
     """The ipywidgets path — best-effort, like `Slider.widget()`'s (PRD 6.2)."""
 
@@ -1013,12 +1225,12 @@ class TestRangeControlsDisplayController:
         import ipywidgets as widgets
 
         figure_widget, controls = _unwrap(plot(exp(x), verbose=False).range_controls())
-        switches = _widgets(controls, "ToggleButtons")
-        scale_switch, = switches
-        trace_switch = next(
-            switch for switch in _widgets(controls, "ToggleButton")
-            if switch.description == "Points"
-        )
+        # Every segment control is an HBox of ToggleButtons — `ToggleButtons`
+        # itself is a wrapping flex row and split `Linear`/`Log` onto two lines.
+        assert not _widgets(controls, "ToggleButtons")
+        toggles = _toggles(controls)
+        log_button = toggles["Log"]
+        trace_switch = toggles["Points"]
         thickness = _slider(controls, "Thickness")
         rows = [
             row for row in _widgets(controls, "HBox")
@@ -1029,17 +1241,18 @@ class TestRangeControlsDisplayController:
             if row.children and all(child.__class__.__name__ == "Button" for child in row.children)
         ]
 
-        assert scale_switch.description == ""
         assert "flex-flow: row nowrap" in next(
             widget for widget in controls.children
             if isinstance(widget, widgets.HTML)
         ).value
-        assert [row.children[0].value for row in rows] == ["Scale", "Mode", "Ticks"]
+        assert [row.children[0].value for row in rows] == [
+            "Scale", "Mode", "Ticks", "Samples",
+        ]
         assert [len(row.children) for row in action_rows] == [3, 3]
         assert [button.description for row in action_rows for button in row.children] == [
             "Fit Y", "[X]+", "[Y]+", "Reset", "[X]−", "[Y]−",
         ]
-        scale_switch.value = "log"
+        log_button.value = True
         trace_switch.value = True
 
         assert figure_widget.layout.yaxis.type == "log"
@@ -1054,8 +1267,7 @@ class TestRangeControlsDisplayController:
         pytest.importorskip("ipywidgets")
         pytest.importorskip("anywidget")
         figure_widget, controls = _unwrap(plot(exp(x), verbose=False).range_controls())
-        switches = _widgets(controls, "ToggleButtons")
-        switches[0].value = "log"
+        _toggles(controls)["Log"].value = True
         next(
             switch for switch in _widgets(controls, "ToggleButton")
             if switch.description == "Points"

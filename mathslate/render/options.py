@@ -80,10 +80,14 @@ DEFAULT_MESH_LINES: int = 24
 #: Plotly's own default is 450px, chosen for a dashboard tile. A notebook cell
 #: is the whole width of the page and the graph is the thing being read, not a
 #: panel beside other panels — and once the range-control sidebar takes a fifth
-#: of the width, 450 leaves a curve squeezed into a letterbox. This is that
-#: default times 1.2, which is enough to stop the squeeze without pushing the
-#: report line under the fold on a laptop screen.
-DEFAULT_HEIGHT: int = 540
+#: of the width, 450 leaves a curve squeezed into a letterbox.
+#:
+#: 540 (450 × 1.2) was the first answer and overshot: it fixed the squeeze and
+#: then made every plot in a notebook of them feel loose, since the height
+#: applies to the surfaces and histograms that were never cramped as well as to
+#: the curve that was. 520 keeps most of the gain and costs a scroll less down
+#: a page of figures.
+DEFAULT_HEIGHT: int = 520
 
 #: The size a plot takes when it is given none. ``height`` starts at
 #: :data:`DEFAULT_HEIGHT`; ``width`` starts unset, and staying unset is what

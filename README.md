@@ -291,7 +291,7 @@ set_plot_size(height=720)         # every later plot, once at the top of a noteb
 set_range_controls(False)         # every later plot, plain figure
 ```
 
-Height defaults to 540px rather than Plotly's 450 — a notebook cell is not a
+Height defaults to 520px rather than Plotly's 450 — a notebook cell is not a
 dashboard tile, and a fifth of the width goes to the sidebar. Width is left
 unset on purpose so the figure fills its cell; set it when you want a fixed
 size and mean it.

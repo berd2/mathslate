@@ -176,6 +176,17 @@ class PlotPlan:
         return sum(s.sample.n_points for s in self.series)
 
 
+def _grid(config: SamplingConfig) -> dict[str, int]:
+    """``resolution=`` for a two-variable sampler, or nothing at all.
+
+    Empty when the config names no budget, so each sampler keeps its own
+    default — a surface's 60 and a region's 200 differ deliberately (a region
+    is judged by its boundary, a surface by its interior) and passing one
+    number for both would quietly halve or triple one of them.
+    """
+    return {} if config.grid_points is None else {"resolution": config.grid_points}
+
+
 def _widest(
     ranges: Iterable[tuple[float, float] | None],
 ) -> tuple[float, float] | None:
@@ -607,7 +618,7 @@ def _plan_surface(
     """``Expr`` with 2 free symbols — a surface, or a contour on request."""
     (frozen,) = _apply_parameters([expr], parameters, specs, axes_needed=2)
     symbols, xrange, yrange = _two_ranges([frozen], specs, parameters)
-    sample = sample_surface(frozen, symbols, xrange, yrange)
+    sample = sample_surface(frozen, symbols, xrange, yrange, **_grid(config))
     notes = list(sample.notes)
     if kind != "contour":
         notes.append("view it flat with kind='contour'.")
@@ -660,7 +671,7 @@ def _plan_region(
     """Shade the part of the plane where ``relation`` is true."""
     (frozen,) = _apply_parameters([relation], parameters, specs, axes_needed=2)
     symbols, xrange, yrange = _two_ranges([frozen], specs, parameters)
-    sample = sample_region(frozen, symbols, xrange, yrange)
+    sample = sample_region(frozen, symbols, xrange, yrange, **_grid(config))
     return PlotPlan(
         kind="region",
         series=[Series(name=label or sp.sstr(relation), sample=sample, expr=frozen)],
@@ -862,7 +873,7 @@ def _plan_implicit(
     difference = sp.simplify(relation.lhs - relation.rhs)
     (frozen,) = _apply_parameters([difference], parameters, specs, axes_needed=2)
     symbols, xrange, yrange = _two_ranges([frozen], specs, parameters)
-    sample = sample_surface(frozen, symbols, xrange, yrange)
+    sample = sample_surface(frozen, symbols, xrange, yrange, **_grid(config))
     return PlotPlan(
         kind="implicit",
         series=[
@@ -911,7 +922,7 @@ def _plan_triple(
 
     symbols, urange, vrange = _two_ranges(frozen, specs, parameters)
     surface = sample_parametric_surface(
-        (frozen[0], frozen[1], frozen[2]), symbols, urange, vrange
+        (frozen[0], frozen[1], frozen[2]), symbols, urange, vrange, **_grid(config)
     )
     name = label or f"({', '.join(sp.sstr(e) for e in frozen)})"
     return PlotPlan(

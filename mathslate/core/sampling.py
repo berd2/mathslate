@@ -58,6 +58,17 @@ class SamplingConfig:
     initial_points: int = 200
     max_depth: int = 8
     max_points: int = 5000
+    #: Samples per axis on a two-variable grid, or ``None`` for each sampler's
+    #: own default — a surface's 60, a region's 200, which differ on purpose
+    #: (``surfaces.REGION_GRID`` says why) and so cannot share one number here.
+    #:
+    #: Separate from ``initial_points`` because the two are not the same scale:
+    #: 1000 points along a curve is ordinary, and a 1000x1000 grid is a million
+    #: evaluations. Without this field the two-variable kinds read no budget at
+    #: all — ``plot(x*y, points=30)`` drew the stock 60x60 grid and said
+    #: nothing, which is the "option that ignores the value it was given" this
+    #: package treats as a bug everywhere else.
+    grid_points: int | None = None
     #: Interior angle (degrees) below which a triple is considered "curved".
     angle_threshold: float = 177.5
     #: Percentiles used for y-axis clipping.

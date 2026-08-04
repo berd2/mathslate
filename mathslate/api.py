@@ -55,6 +55,12 @@ __all__ = [
 
 _VERBOSE: bool = True
 
+#: Ceiling on a two-variable grid's samples per axis. `points=` is one number
+#: for both scales, and a curve's are cheap where a grid's are quadratic: 2000
+#: along a line is 2000 evaluations and a 2000x2000 grid is four million. This
+#: is where "as many as you asked for" stops being a service.
+_MAX_GRID_POINTS: int = 400
+
 
 def set_verbose(value: bool) -> None:
     """Turn the one-line inference report on or off."""
@@ -378,6 +384,13 @@ def _sampling_config(
             raise UnsupportedInputError(f"points must be at least 2; got {points!r}.")
         changes["initial_points"] = int(points)
         changes["max_points"] = max(int(points), DEFAULT_CONFIG.max_points)
+        # And the two-variable grid, which read no budget at all until this:
+        # `plot(x*y, points=30)` drew the stock 60x60 and said nothing. It is a
+        # separate field because the scales differ — 1000 points along a curve
+        # is ordinary and a 1000x1000 grid is a million evaluations — so what
+        # `points=` means on a surface is "per axis", and the sampler's own
+        # ceiling is what stops one number being read as the other.
+        changes["grid_points"] = min(int(points), _MAX_GRID_POINTS)
     if exclusions is not None:
         if exclusions is False:
             changes["probe_jumps"] = False

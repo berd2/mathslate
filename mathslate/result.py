@@ -23,6 +23,7 @@ from . import codegen
 from ._text import safe_print
 from .core.analysis import Analysis, analyze_expression
 from .core.dispatch import REQUESTABLE_KINDS, PlotPlan, build_plan
+from .core.sampling import SamplingConfig
 from .core.tables import DEFAULT_ROWS, Table, tabulate
 from .errors import UnsupportedInputError
 from .render import plotly_backend
@@ -290,6 +291,7 @@ class PlotResult:
         auto_y: bool = False,
         auto_z: bool = False,
         render_options: RenderOptions | None = None,
+        config: SamplingConfig | None = None,
     ) -> "PlotResult":
         """A fresh result over a new domain — a resample, not a view-crop.
 
@@ -309,6 +311,12 @@ class PlotResult:
         function's *output*, computed from the X/Y grid rather than sampled
         along its own axis, so ``z_range`` is always a ``zlim`` view override
         and never triggers a resample by itself.
+
+        ``config`` replaces the sampler's tunables — the point budget the
+        ``Samples`` control moves. It is a resample like a moved X window and
+        not a view change, which is why it comes through here rather than
+        through ``render_options``: nothing about the figure's *drawing*
+        changes, the curve is measured at more or fewer places.
 
         ``auto_y``/``auto_z`` *clear* that view override rather than replacing
         it, which passing ``None`` cannot do: ``None`` means "leave this axis
@@ -401,7 +409,10 @@ class PlotResult:
         # only place the distinction matters, ``contour`` being a genuine
         # choice that re-inference would lose — and let the rest be re-derived.
         kind = plan.kind if plan.kind in REQUESTABLE_KINDS else None
-        new_plan = build_plan(obj, *ranges, polar=plan.polar, kind=kind, config=plan.config)
+        new_plan = build_plan(
+            obj, *ranges, polar=plan.polar, kind=kind,
+            config=plan.config if config is None else config,
+        )
         figure = plotly_backend.figure_from_plan(new_plan, options)
         return PlotResult(new_plan, figure, options, controls=self._controls)
 

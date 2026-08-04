@@ -2429,3 +2429,67 @@ Two regressions, both from tests written for earlier rounds:
 * `plot()`'s keyword-coverage test failed on `controls`, which is the test doing
   its job: the exemption is now declared in `_DISPLAY_KEYWORDS` rather than the
   assertion being loosened.
+
+## 27. Three from one Jupyter session
+
+### 27.1 `Linear`/`Log` on two rows — and two bugs under it
+
+Reported on `plot(sqrt(x))`, and the choice of function is the clue: `sqrt` is
+non-negative, so it is one of the few plots where `can_log_y` holds and a
+*second* scale button exists at all. Under it were two independent defects.
+
+**The stylesheet was malformed.** Each rule in `range_controls` spans several
+adjacent string literals, of which only the first was an f-string — so the
+doubled braces CSS needs inside an f-string came out literally everywhere else.
+Every rule shipped ending `}}` (a stray top-level `}`, which browsers recover
+from) and the two written as `selector {{ … }}` shipped as a *nested block*,
+which drops the whole declaration list. Those two were exactly the rules that
+give a segment control's buttons `flex: 1 1 0`. Rewritten with `.format`, which
+has no brace-doubling problem across concatenated literals, and a test asserts
+no `{{`/`}}` survives and that the braces balance.
+
+**Y scale was the last `ToggleButtons`.** §22 and §23 had each rewritten one
+control — Mode, then Mesh, then Z scale — around the fact that ipywidgets'
+`ToggleButtons` view is a *wrapping* flex row, in three separate copies of the
+same fix. Y scale was never converted, so it was the one that could still wrap.
+The fourth copy is written once, as `_segment`, and every control goes through
+it. Each choice carries `(label, value)` explicitly: `Points` selects the trace
+mode `scatter`, which no rule could derive from the caption, and a segment that
+guessed would set a `kind` `RenderOptions.trace_mode` does not recognise and
+quietly draw lines.
+
+**And the control was one-way.** Found while testing the rewrite, present on
+master: `_apply` merges the fresh layout with `layout.update()`, and a linear
+axis is the *absence* of `yaxis.type` rather than a value — so `Log` took and
+`Linear` did nothing, leaving a logarithmic axis wearing the linear window's
+numbers. Cleared by name from the fresh figure.
+
+### 27.2 520 rather than 540
+
+§26.1 took Plotly's 450 × 1.2. Correct for the case that prompted it — a curve
+beside the sidebar — and loose for a notebook full of surfaces and histograms,
+which were never cramped. 520 keeps most of the gain and costs a scroll less
+down a page of figures.
+
+### 27.3 `Samples` — and `points=` finally reaching a grid
+
+The sidebar moved the window and the drawing options but not the sampler, which
+is the one thing PRD 5.3 is actually about. `_replotted` gains a `config=`, the
+controller carries one beside its `RenderOptions`, and a `Samples` slider moves
+it. Down as much as up: coarsening a curve to 50 shows the adaptive pass its own
+scaffolding, which is what makes "adaptive" visible rather than asserted.
+
+Building it surfaced a latent bug. `points=` set `initial_points`, and the
+two-variable samplers never read it — `sample_surface` was called with its
+default `resolution`, so `plot(x*y, points=30)` drew the stock 60×60 and said
+nothing. A slider with the same gap would have been a control that does nothing
+on half the plot kinds.
+
+`SamplingConfig.grid_points` fixes both, and is deliberately a *second* field
+rather than a reuse of `initial_points`: the scales differ, 2000 along a line
+being 2000 evaluations where 2000 square is four million. `None` means "each
+sampler's own default", which is what lets a surface keep 60 and a region keep
+the 200 its boundary needs. `points=` is capped at `_MAX_GRID_POINTS` on the way
+in, and the slider offers 10–200 per axis on a grid against 20–2000 on a curve,
+because one number that means different things depending on what is plotted is
+not one control.

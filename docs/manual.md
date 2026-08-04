@@ -490,6 +490,26 @@ print(plot(sin(x), points=1000).plan.total_points >= 1000)
 plot(sin(x), points=0)
 ```
 
+On a two-variable plot — a surface, contour, implicit curve, region or
+parametric surface — it means samples **per axis** of the grid instead:
+
+```python
+print(plot(x*y, points=30, verbose=False).plan.series[0].sample.z.shape)   # (30, 30)
+```
+
+That is a different scale from a curve's on purpose, and it is capped: 2000
+points along a line is 2000 evaluations, and a 2000×2000 grid is four million.
+Left unset, each kind keeps its own default — 60 per axis for a surface, 200
+for a region, which is higher because a region is judged by its boundary and a
+surface by its interior.
+
+```python
+print(plot(x*y, verbose=False).plan.series[0].sample.z.shape)              # (60, 60)
+print(plot(x**2 + y**2 < 1, verbose=False).plan.series[0].sample.z.shape)  # (200, 200)
+```
+
+§4.13's `Samples` slider is this number, live.
+
 ### 4.8 `exclusions`
 
 Automatic discontinuity detection (§6) is what makes `plot(tan(x))` right where
@@ -782,7 +802,7 @@ In 2D you rarely need it: zooming re-labels itself (§4.13).
 
 ### 4.12b `width` and `height` — how big the figure is
 
-A plot is `DEFAULT_HEIGHT` (540px) tall unless it is told otherwise. Plotly's
+A plot is `DEFAULT_HEIGHT` (520px) tall unless it is told otherwise. Plotly's
 own default is 450, which is a dashboard tile's height; a notebook cell is the
 full width of the page and the graph is the thing being read, and once the
 sidebar of §4.13 takes its fifth of the width, 450 reads as a letterbox.
@@ -814,7 +834,7 @@ set_plot_size(height=720)
 print(plot(sin(x), verbose=False).plotly.layout.height)         # 720
 print(plot(sin(x), height=300, verbose=False).plotly.layout.height)  # 300 — a call still wins
 set_plot_size(reset=True)
-print(get_plot_size())                                          # (None, 540)
+print(get_plot_size())                                          # (None, 520)
 ```
 
 Both are reproduced by `show_python()`: a figure and a program said to build it
@@ -858,10 +878,19 @@ plot(sin(x)/x, (x, -10, 10))          # the figure, with x/y min·max boxes
                                         # beside it; moving one resamples
 ```
 
-The sidebar also has `Auto Y`, `Reset`, X/Y `in`/`out` buttons, and a `Ticks`
-slider — §4.12a's `ticks=`, live, with the bottom of its track meaning "leave
-the count to Plotly". On a true 3D surface, `Auto Y` becomes `Auto Z`, and Z
-`in`/`out` buttons appear too.
+The sidebar also has `Auto Y`, `Reset`, X/Y `in`/`out` buttons, and two
+sliders: `Ticks` — §4.12a's `ticks=`, live, with the bottom of its track
+meaning "leave the count to Plotly" — and `Samples`, which is §4.7's `points=`.
+On a true 3D surface, `Auto Y` becomes `Auto Z`, and Z `in`/`out` buttons
+appear too.
+
+`Samples` is worth dragging *down* as well as up. Coarsening a curve to 50
+shows the adaptive pass its own scaffolding — where it chose to put extra
+points and where it did not — which is what makes "adaptive" something you can
+see rather than something this manual asserts. On a two-variable plot the
+slider moves the grid's samples per axis instead, on its own smaller scale.
+Whatever you choose survives the next X or Y edit, so a window move does not
+quietly put the density back.
 
 Zooming re-labels the horizontal axis, which is the other half of that control
 and the half you should not have to think about. Ticks chosen once for the

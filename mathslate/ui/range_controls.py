@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import plotly.graph_objects as go
 
+from ..core.sampling import DEFAULT_CONFIG
+from ..core.surfaces import GRID as DEFAULT_GRID
 from ..errors import MathSlateError, UnsupportedInputError
 from ..render import axes, plotly_backend
 from ..render.options import DEFAULT_MESH_LINES
@@ -483,35 +485,46 @@ def build(
     if has_z:
         range_rows.append(_range_row("z", z_min, z_max))
 
+    # Written with `.format` rather than as f-strings. CSS braces have to be
+    # doubled inside an f-string, and each of these rules spans several string
+    # literals of which only the first was one — so `{{`/`}}` in the rest came
+    # out as literal double braces. Every rule shipped ending in `}}` (a stray
+    # top-level `}`, which browsers recover from) and the two that needed a
+    # doubled *opening* brace shipped as `selector {{ ... }}`, which is a
+    # nested block and drops the whole declaration list. Those two are the ones
+    # that keep a segment control's buttons side by side, so they were dead
+    # wherever it mattered: `plot(sqrt(x))` — non-negative, so `Log` is offered
+    # and there are two buttons to fit — wrapped `Linear`/`Log` onto two rows.
     controls_style = widgets.HTML(
         value=(
             "<style>"
-            f".{_RANGE_CONTROLS_INPUT_CLASS} {{ "
-            "box-sizing: border-box; max-width: 100% !important; "
-            "min-width: 0 !important; }}"
-            f".{_RANGE_CONTROLS_INPUT_CLASS} input {{ "
-            "box-sizing: border-box; max-width: 100% !important; "
-            "min-width: 0 !important; }}"
-            f".{_RANGE_CONTROLS_COMPACT_CLASS} {{ "
-            "box-sizing: border-box; max-width: 100% !important; "
-            "min-width: 0 !important; overflow: hidden; }}"
-            f".{_RANGE_CONTROLS_COMPACT_CLASS} .widget-button, "
-            f".{_RANGE_CONTROLS_COMPACT_CLASS} .widget-toggle-button {{ "
-            "box-sizing: border-box; min-width: 0 !important; "
-            "padding-left: 3px !important; padding-right: 3px !important; }}"
-            # ipywidgets ToggleButtons uses a wrapping flex row by
-            # default.  Two 72px buttons can therefore split at a theme's
-            # extra border/gap pixel even inside a 148px controller slot.
-            # Segment controls must stay a single compact row.
-            f".{_RANGE_CONTROLS_COMPACT_CLASS}.widget-toggle-buttons {{ "
-            "display: flex !important; flex-flow: row nowrap !important; "
-            "flex-wrap: nowrap !important; }}"
-            f".{_RANGE_CONTROLS_COMPACT_CLASS}.widget-toggle-buttons "
-            "> .widget-toggle-button {{ flex: 1 1 0 !important; "
-            "width: 50% !important; }}"
-            f".{_RANGE_CONTROLS_COMPACT_CLASS}.widget-toggle-buttons "
-            "> .widget-toggle-button:only-child {{ width: 100% !important; }}"
+            ".{input} {{ box-sizing: border-box; max-width: 100% !important;"
+            " min-width: 0 !important; }}"
+            ".{input} input {{ box-sizing: border-box; max-width: 100% !important;"
+            " min-width: 0 !important; }}"
+            ".{compact} {{ box-sizing: border-box; max-width: 100% !important;"
+            " min-width: 0 !important; overflow: hidden; }}"
+            ".{compact} .widget-button, .{compact} .widget-toggle-button {{"
+            " box-sizing: border-box; min-width: 0 !important;"
+            " padding-left: 3px !important; padding-right: 3px !important; }}"
+            # ipywidgets' own ToggleButtons view is a wrapping flex row, so two
+            # 72px buttons split at a theme's extra border pixel even inside a
+            # 148px slot. Every segment control here is a plain HBox of
+            # ToggleButtons now (see `_segment`), but the rules stay: they cost
+            # nothing and they are what stops a themed HBox doing the same.
+            ".{compact}.widget-hbox, .{compact}.widget-toggle-buttons {{"
+            " display: flex !important; flex-flow: row nowrap !important;"
+            " flex-wrap: nowrap !important; }}"
+            ".{compact}.widget-hbox > .widget-toggle-button,"
+            " .{compact}.widget-toggle-buttons > .widget-toggle-button {{"
+            " flex: 1 1 0 !important; min-width: 0 !important; }}"
+            ".{compact}.widget-hbox > .widget-toggle-button:only-child,"
+            " .{compact}.widget-toggle-buttons > .widget-toggle-button:only-child"
+            " {{ width: 100% !important; }}"
             "</style>"
+        ).format(
+            input=_RANGE_CONTROLS_INPUT_CLASS,
+            compact=_RANGE_CONTROLS_COMPACT_CLASS,
         ),
         layout=widgets.Layout(display="none"),
     )
@@ -520,6 +533,11 @@ def build(
     # PlotResult. Every redraw starts from them so a changed scale, mode or
     # mesh density survives the next X/Y/Z range edit.
     controller_options = result._options
+    # The sampler's tunables belong to this controller too, and separately: a
+    # point budget is not a drawing option, it decides how many places the
+    # curve is measured at. Every redraw carries it so a moved X window keeps
+    # the density the reader chose.
+    controller_config = plan.config
     # A size given to *this call* has to go in there too, not only onto the
     # widget above. `_apply` replaces the whole layout with the fresh figure's
     # on every redraw, so a size that lived only on the widget was overwritten
@@ -605,6 +623,16 @@ def build(
             figure_widget.data = []
             figure_widget.add_traces(fresh.plotly.data)
             figure_widget.layout.update(fresh.plotly.layout.to_plotly_json())
+            # `update` merges, so anything the fresh figure leaves *unset*
+            # keeps whatever the previous draw put there. A linear axis is the
+            # absence of `yaxis.type` rather than a value, so coming back from
+            # Log needs it assigned by name — without this the Scale control
+            # was one-way: Log took, Linear did nothing, and the axis stayed
+            # logarithmic with the linear window's numbers on it. Reading it
+            # off `fresh` rather than writing `None` keeps the one source of
+            # truth the redraw already has.
+            if not has_z:
+                figure_widget.layout.yaxis.type = fresh.plotly.layout.yaxis.type
             if has_z:
                 figure_widget.layout.scene.zaxis.type = z_scale
         _apply_thickness()
@@ -630,6 +658,7 @@ def build(
                 y_range=(y_min.value, y_max.value),
                 z_range=(z_min.value, z_max.value) if has_z else None,
                 render_options=controller_options,
+                config=controller_config,
             )
         except (MathSlateError, ValueError, OverflowError):
             return  # e.g. a range too narrow for this expression to sample
@@ -679,6 +708,7 @@ def build(
                 x_range=(x_min.value, x_max.value),
                 auto_y=True,
                 render_options=controller_options,
+                config=controller_config,
             )
         except (MathSlateError, ValueError, OverflowError):
             return
@@ -723,6 +753,7 @@ def build(
                 y_range=(y_min.value, y_max.value),
                 auto_z=True,
                 render_options=controller_options,
+                config=controller_config,
             )
         except (MathSlateError, ValueError, OverflowError):
             return
@@ -850,24 +881,40 @@ def build(
         else:
             _retick()
 
+    def _change_samples(change: dict[str, Any]) -> None:
+        """Move the sampler's point budget, then resample at it.
+
+        On a curve this is `initial_points`, where PRD 5.3's adaptive pass
+        *starts* — the refined count lands above it, and `max_points` is raised
+        alongside so a budget larger than the shipped ceiling is not silently
+        clipped back to it, the same pairing `api._sampling_config` does for
+        `points=`. On a two-variable plot it is the grid's samples per axis
+        instead; those are separate fields because they are separate scales.
+
+        Coarse is as useful as fine: dropping a curve to 50 shows the sampler's
+        own scaffolding, which is what makes "adaptive" something you can see
+        rather than something the manual claims.
+        """
+        nonlocal controller_config
+        if change.get("name") != "value":
+            return
+        wanted = int(change["new"])
+        if samples_on_grid:
+            controller_config = replace(controller_config, grid_points=wanted)
+        else:
+            controller_config = replace(
+                controller_config,
+                initial_points=wanted,
+                max_points=max(wanted, DEFAULT_CONFIG.max_points),
+            )
+        _redraw()
+
     def _change_thickness(change: dict[str, Any]) -> None:
         nonlocal thickness_percent
         if change.get("name") != "value":
             return
         thickness_percent = int(change["new"])
         _apply_thickness()
-
-    y_scale_options = [("Linear", "linear")]
-    if can_log_y or controller_options.log_y:
-        y_scale_options.append(("Log", "log"))
-    y_scale_switch = widgets.ToggleButtons(
-        options=y_scale_options,
-        value="log" if controller_options.log_y else "linear",
-        description="",
-        style={"button_width": "72px"},
-        layout=widgets.Layout(width="148px", min_width="0"),
-    )
-    y_scale_switch.observe(_change_y_scale, names="value")
 
     def _exclusive_toggle(
         change: dict[str, Any], selected: Any, other: Any,
@@ -884,59 +931,78 @@ def build(
             other.value = False
         callback({"name": "value", "new": value})
 
-    trace_mode = controller_options.trace_mode(plan)
-    line_toggle = widgets.ToggleButton(
-        value=trace_mode != "markers", description="Line",
-        layout=widgets.Layout(width="72px", min_width="0"),
-    )
-    points_toggle = widgets.ToggleButton(
-        value=trace_mode == "markers", description="Points",
-        layout=widgets.Layout(width="72px", min_width="0"),
-    )
-    trace_mode_switch = widgets.HBox(
-        [line_toggle, points_toggle],
-        layout=widgets.Layout(width="148px", min_width="0", overflow="hidden"),
-    )
-    trace_mode_switch.add_class(_RANGE_CONTROLS_COMPACT_CLASS)
-    line_toggle.observe(
-        lambda change: _exclusive_toggle(
-            change, line_toggle, points_toggle, "line", _change_trace_mode
-        ), names="value",
-    )
-    points_toggle.observe(
-        lambda change: _exclusive_toggle(
-            change, points_toggle, line_toggle, "scatter", _change_trace_mode
-        ), names="value",
+    def _segment(
+        *choices: tuple[str, str] | None, active: str, callback: Any
+    ) -> tuple[Any, dict[str, Any]]:
+        """One two-state selector, as an HBox rather than a `ToggleButtons`.
+
+        ipywidgets' own `ToggleButtons` view is a *wrapping* flex row, and two
+        72px buttons split onto separate lines at a theme's extra border pixel
+        even inside a 148px slot. Mode, Mesh and Z scale had each been rewritten
+        around that, one at a time and in three copies; Y scale was the one left
+        as a `ToggleButtons`, and so the one that could still wrap — which is
+        what `plot(sqrt(x))` did, it being non-negative and therefore the case
+        where a second (`Log`) button exists at all. This is the fourth copy,
+        written once.
+
+        Each choice is ``(label, value)``: the value is what the callback reads,
+        and it is not derivable from the label — `Points` selects the trace mode
+        `scatter`, and a segment that guessed `points` from the caption would
+        set a `kind` `RenderOptions.trace_mode` does not recognise and quietly
+        draw lines. ``None`` omits a choice, for the axis that cannot go log.
+
+        Returns the row and its buttons keyed by label, so callers that read one
+        back — `_change_mesh_density` asks whether the mesh is on — still can.
+        """
+        present = [choice for choice in choices if choice is not None]
+        buttons = {
+            label: widgets.ToggleButton(
+                value=(label == active),
+                description=label,
+                layout=widgets.Layout(width="72px", min_width="0"),
+            )
+            for label, _ in present
+        }
+        if len(present) == 2:
+            for (label, value), (other_label, _) in (
+                (present[0], present[1]),
+                (present[1], present[0]),
+            ):
+                this, other = buttons[label], buttons[other_label]
+                this.observe(
+                    # `value=` binds now; the loop variable would otherwise be
+                    # read at call time and both buttons would send the second.
+                    lambda change, this=this, other=other, value=value: (
+                        _exclusive_toggle(change, this, other, value, callback)
+                    ), names="value",
+                )
+        row = widgets.HBox(
+            list(buttons.values()),
+            layout=widgets.Layout(width="148px", min_width="0", overflow="hidden"),
+        )
+        row.add_class(_RANGE_CONTROLS_COMPACT_CLASS)
+        return row, buttons
+
+    y_scale_switch, _y_scale_buttons = _segment(
+        ("Linear", "linear"),
+        ("Log", "log") if (can_log_y or controller_options.log_y) else None,
+        active="Log" if controller_options.log_y else "Linear",
+        callback=_change_y_scale,
     )
 
-    # Use the same fixed HBox segment controls as Mode and Mesh.  The
-    # ipywidgets ToggleButtons view can wrap its inner buttons under a 3D
-    # controller's narrower flex layout, leaving ``Linear`` and ``Log`` on
-    # separate lines despite the parent having enough visible width.
-    z_linear = widgets.ToggleButton(
-        value=True, description="Linear",
-        layout=widgets.Layout(width="72px", min_width="0"),
+    trace_mode = controller_options.trace_mode(plan)
+    trace_mode_switch, _trace_mode_buttons = _segment(
+        ("Line", "line"),
+        ("Points", "scatter"),
+        active="Points" if trace_mode == "markers" else "Line",
+        callback=_change_trace_mode,
     )
-    z_scale_buttons = [z_linear]
-    if can_log_z:
-        z_log = widgets.ToggleButton(
-            value=False, description="Log",
-            layout=widgets.Layout(width="72px", min_width="0"),
-        )
-        z_scale_buttons.append(z_log)
-        z_linear.observe(
-            lambda change: _exclusive_toggle(
-                change, z_linear, z_log, "linear", _change_z_scale
-            ), names="value",
-        )
-        z_log.observe(
-            lambda change: _exclusive_toggle(
-                change, z_log, z_linear, "log", _change_z_scale
-            ), names="value",
-        )
-    z_scale_switch = widgets.HBox(
-        z_scale_buttons,
-        layout=widgets.Layout(width="148px", min_width="0", overflow="hidden"),
+
+    z_scale_switch, _z_scale_buttons = _segment(
+        ("Linear", "linear"),
+        ("Log", "log") if can_log_z else None,
+        active="Linear",
+        callback=_change_z_scale,
     )
 
     initial_mesh = controller_options.mesh
@@ -956,36 +1022,15 @@ def build(
         continuous_update=False,
         layout=widgets.Layout(width="calc(100% - 56px)", flex="1 1 0", min_width="0"),
     )
-    mesh_on = widgets.ToggleButton(
-        value=mesh_enabled, description="On",
-        layout=widgets.Layout(width="72px", min_width="0"),
+    mesh_switch, mesh_buttons = _segment(
+        ("On", "on"),
+        ("Off", "off"),
+        active="On" if mesh_enabled else "Off",
+        callback=_change_mesh,
     )
-    mesh_off = widgets.ToggleButton(
-        value=not mesh_enabled, description="Off",
-        layout=widgets.Layout(width="72px", min_width="0"),
-    )
-    mesh_switch = widgets.HBox(
-        [mesh_on, mesh_off],
-        layout=widgets.Layout(width="148px", min_width="0", overflow="hidden"),
-    )
-    mesh_on.observe(
-        lambda change: _exclusive_toggle(
-            change, mesh_on, mesh_off, "on", _change_mesh
-        ), names="value",
-    )
-    mesh_off.observe(
-        lambda change: _exclusive_toggle(
-            change, mesh_off, mesh_on, "off", _change_mesh
-        ), names="value",
-    )
+    mesh_on = mesh_buttons["On"]
     mesh_density.observe(_change_mesh_density, names="value")
-    for compact_control in (
-        y_scale_switch,
-        z_scale_switch,
-        mesh_switch,
-        mesh_density,
-    ):
-        compact_control.add_class(_RANGE_CONTROLS_COMPACT_CLASS)
+    mesh_density.add_class(_RANGE_CONTROLS_COMPACT_CLASS)
 
     thickness_slider = widgets.IntSlider(
         value=100,
@@ -1018,6 +1063,31 @@ def build(
     )
     tick_slider.observe(_change_ticks, names="value")
     tick_slider.add_class(_RANGE_CONTROLS_COMPACT_CLASS)
+
+    # How many places the function is measured at. On a curve that is where
+    # PRD 5.3's adaptive pass starts; on a two-variable plot it is the grid's
+    # samples *per axis*, and the two are deliberately different scales — 2000
+    # along a line is 2000 evaluations, and a 2000x2000 grid is four million.
+    # A slider that offered one range for both would be offering a number that
+    # means something different depending on what is plotted, and this is a
+    # live control redrawing on every release.
+    samples_on_grid = plan.two_variable
+    samples_slider = widgets.IntSlider(
+        value=int(
+            (controller_config.grid_points or DEFAULT_GRID)
+            if samples_on_grid
+            else controller_config.initial_points
+        ),
+        min=10 if samples_on_grid else 20,
+        max=200 if samples_on_grid else 2000,
+        step=5 if samples_on_grid else 10,
+        description="",
+        readout_format="d",
+        continuous_update=False,
+        layout=widgets.Layout(flex="1 1 0", min_width="0"),
+    )
+    samples_slider.observe(_change_samples, names="value")
+    samples_slider.add_class(_RANGE_CONTROLS_COMPACT_CLASS)
 
     compact_button = widgets.Layout(width="100%", min_width="0")
     if has_z:
@@ -1111,7 +1181,7 @@ def build(
         # value in its place, while reserving the full two-way toggle for
         # plots whose values can actually be shown logarithmically.
         scale_control: Any = y_scale_switch
-        if len(y_scale_options) == 1:
+        if len(_y_scale_buttons) == 1:
             scale_control = widgets.Label(
                 "Linear",
                 layout=widgets.Layout(width="54px", min_width="0"),
@@ -1166,16 +1236,24 @@ def build(
             ),
         ])
 
-    tick_controls: list[Any] = [
-        widgets.HBox(
+    def _slider_row(caption: str, slider: Any) -> Any:
+        return widgets.HBox(
             [
-                widgets.Label("Ticks", layout=widgets.Layout(width="50px")),
-                tick_slider,
+                widgets.Label(caption, layout=widgets.Layout(width="56px")),
+                slider,
             ],
             layout=widgets.Layout(
                 width="calc(100% - 4px)", margin="0 2px", align_items="center"
             ),
         )
+
+    # Every plot that gets this far has an expression to sample more of: raw
+    # data, a matrix and a callable all fail `_resamplable()` and never reach
+    # the sidebar at all, so there is no case here where Samples would be a
+    # control that does nothing.
+    tick_controls: list[Any] = [
+        _slider_row("Ticks", tick_slider),
+        _slider_row("Samples", samples_slider),
     ]
 
     thickness_controls: list[Any] = []
