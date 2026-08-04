@@ -166,6 +166,8 @@ Algorithm:
 - Expression contains trigonometric functions or `pi` → tick marks at multiples of π (interval auto-selected from π/4 to 2π based on range width).
 - `exp` / `log` dominant → **suggest** a log scale; do not apply it automatically. A learner viewing a log-scaled plot without realizing it is harmful.
 - Otherwise → standard numeric ticks.
+- **The window, not the domain, decides.** All of the above are re-answered when the reader zooms: a π interval is re-fitted, dropped for numbers once no multiple of π lands often enough, and a numeric count is thinned to what its own labels have room for (Plotly rounds each label to the tick spacing and offers no offset line, so a deep zoom far from the origin spells its position out in full). A 3D scene positions labels in the projection and recomputes nothing on a camera move, which is what `ticks=` is for.
+- `ticks=n` caps labels per axis, `ticks=False` removes them, `ticks=None` is the automatic choice. A ceiling rather than a target, and reproduced by `show_python()`.
 
 ### 5.5 `show_python()` — the actual mechanism of growth
 

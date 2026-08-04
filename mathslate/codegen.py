@@ -544,11 +544,13 @@ def _two_variable_layout(
             # Same lever as a 2D y-range: bound the view, not the data, so one
             # pole cannot hide the surface behind a wall. `zlim` overrides it.
             scene += f", zaxis_range={_fmt_list(list(limits))}"
+        scene += _scene_tick_kwargs(options)
         lines.append(f"fig.update_layout(scene=dict({scene}))")
     else:
         lines.append(f"fig.update_xaxes(title_text={first!r})")
         lines.append(f"fig.update_yaxes(title_text={second!r})")
         lines += _view_window_lines(plan, options)
+        lines += _tick_density_lines(options)
     return lines
 
 
@@ -631,7 +633,8 @@ def _space_curve_code(plan: PlotPlan, options: RenderOptions) -> str:
         f"                             connectgaps=False, name={series.name!r},",
         "                             line=dict(width=4)))",
         f"fig.update_layout({layout},",
-        "    scene=dict(xaxis_title='x', yaxis_title='y', zaxis_title='z'))",
+        "    scene=dict(xaxis_title='x', yaxis_title='y', zaxis_title='z'"
+        f"{_scene_tick_kwargs(options)}))",
         "fig.show()",
     ]
     return _assemble(needed, body)
@@ -793,6 +796,38 @@ def _view_window_lines(plan: PlotPlan, options: RenderOptions) -> list[str]:
     return lines
 
 
+def _tick_density_lines(options: RenderOptions) -> list[str]:
+    """The emitted twin of `plotly_backend._apply_tick_density`.
+
+    ``ticks=`` is in ``REPRODUCED``, so leaving it out here would be the exact
+    breach this module exists to prevent: a figure the reader is looking at and
+    a program said to build it that disagree about what is on the axes.
+    """
+    lines: list[str] = []
+    limit = options.tick_limit()
+    if limit is not None:
+        lines.append("# `nticks` is a ceiling, not a count: Plotly still picks")
+        lines.append("# round numbers, it just stops before it passes this many.")
+        for axis in ("x", "y"):
+            lines.append(f"fig.update_{axis}axes(nticks={limit})")
+    if not options.tick_labels_visible():
+        for axis in ("x", "y"):
+            lines.append(f"fig.update_{axis}axes(showticklabels=False)")
+    return lines
+
+
+def _scene_tick_kwargs(options: RenderOptions) -> str:
+    """The same, as ``scene=dict(...)`` keywords for a 3D figure."""
+    parts: list[str] = []
+    limit = options.tick_limit()
+    for axis in ("xaxis", "yaxis", "zaxis"):
+        if limit is not None:
+            parts.append(f"{axis}_nticks={limit}")
+        if not options.tick_labels_visible():
+            parts.append(f"{axis}_showticklabels=False")
+    return "".join(f", {part}" for part in parts)
+
+
 def _layout_lines(plan: PlotPlan, options: RenderOptions) -> list[str]:
     """Every figure property listed in ``render.options.REPRODUCED``."""
     layout = f"template='plotly_white', showlegend={options.legend_visible(plan)}"
@@ -821,6 +856,7 @@ def _layout_lines(plan: PlotPlan, options: RenderOptions) -> list[str]:
             f"fig.update_xaxes(tickmode='array', tickvals={_fmt_list(list(ticks.values))}, "
             f"ticktext={list(ticks.text)!r})"
         )
+    lines += _tick_density_lines(options)
 
     if plan.bands:
         how = "solved exactly" if plan.bands_exact else "found by sampling"

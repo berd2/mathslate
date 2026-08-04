@@ -36,6 +36,7 @@ REPRODUCED: tuple[str, ...] = (
     "showlegend",
     "xaxis range",
     "xaxis tickvals/ticktext",
+    "axis tick density",
     "yaxis range",
     "yaxis type",
     "zaxis range",
@@ -86,6 +87,15 @@ class RenderOptions:
     #: sparse next to the actual sample density. Ignored by every 2D kind,
     #: which has no surface to rule.
     mesh: bool | int = True
+    #: Axis tick labels, in the same three-valued shape as ``mesh``. ``None``
+    #: leaves the count to Plotly, an ``int`` caps it — a *maximum* per axis,
+    #: not a target, since asking for twenty labels does not make twenty of
+    #: them legible — and ``False`` removes them, which is what a figure being
+    #: shown for its shape rather than read off wants. The cap is the only
+    #: lever a 3D scene has: Plotly re-lays 2D ticks against the axis's pixel
+    #: length on every zoom but positions scene labels in the projection, so
+    #: they crowd as the camera comes in and nothing recomputes them.
+    ticks: bool | int | None = None
     #: View-window overrides. A range like ``(x, -10, 10)`` sets the *domain* —
     #: where the function is sampled; these set the *window* — what the axis
     #: shows. They differ whenever the two should: to undo the automatic y-clip
@@ -104,6 +114,23 @@ class RenderOptions:
         if plan.kind == "data" and plan.series[0].sample.n_points <= 200:
             return "markers"
         return "lines"
+
+    def tick_limit(self) -> int | None:
+        """The reader's ``ticks=`` as a Plotly ``nticks``, or ``None`` for auto.
+
+        ``True`` and ``False`` both come back as ``None``: neither is a count,
+        and ``False`` is answered by :meth:`tick_labels_visible` instead. The
+        ``bool`` check has to come first — ``bool`` is a subclass of ``int``,
+        so ``ticks=False`` would otherwise be read as a cap of zero, which
+        Plotly takes as "choose freely" and which is the opposite of what was
+        asked. (The same trap ``mesh`` fell into; see ``api._mesh_option``.)
+        """
+        if isinstance(self.ticks, bool) or self.ticks is None:
+            return None
+        return int(self.ticks)
+
+    def tick_labels_visible(self) -> bool:
+        return self.ticks is not False
 
     def legend_visible(self, plan: PlotPlan) -> bool:
         if self.show_legend is not None:

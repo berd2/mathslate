@@ -349,7 +349,7 @@ you meant rather than guessing:
 ```text
 plot(obj, *ranges, polar=False, kind=None, label=None, title=None,
      yscale=None, show_legend=None, points=None, exclusions=None,
-     mesh=True, xlim=None, ylim=None, zlim=None,
+     mesh=True, ticks=None, xlim=None, ylim=None, zlim=None,
      verbose=None, parameters=()) -> PlotResult
 ```
 
@@ -747,6 +747,37 @@ Each is a `(low, high)` pair with `low < high`, and each is reproduced by
 plot(sin(x), xlim=(5, 1))
 ```
 
+### 4.12a `ticks` — how many labels an axis carries
+
+Left alone, the count is Plotly's. `ticks=n` caps it at `n` per axis, `ticks=False`
+removes the labels, and `ticks=None` (the default) restores the automatic choice.
+The number is a **ceiling, not a target**: Plotly still picks round positions, it
+just stops before it passes that many.
+
+```python
+print(plot(exp(x), ticks=5, verbose=False).plotly.layout.xaxis.nticks)          # 5
+print(plot(exp(x), ticks=False, verbose=False).plotly.layout.xaxis.showticklabels)  # False
+```
+
+On a 3D plot it reaches all three scene axes, and there it matters more than it
+does in 2D. Plotly re-lays a flat axis's ticks against its pixel length every
+time the view changes; a scene's labels are positioned in the projection and
+nothing recomputes them, so they crowd as the camera comes in. This is the only
+lever for that:
+
+```python
+print(plot(x*y, ticks=4, verbose=False).plotly.layout.scene.zaxis.nticks)  # 4
+```
+
+Fewer than three leaves the axis without a readable scale — two labels are its
+endpoints and nothing between them — so it is refused rather than drawn:
+
+```python raises=UnsupportedInputError
+plot(sin(x), ticks=2)
+```
+
+In 2D you rarely need it: zooming re-labels itself (§4.13).
+
 ### 4.13 Live range controls — moving the window after the figure exists
 
 `xlim`/`ylim` choose a window once, and Plotly's own drag-to-zoom only crops
@@ -765,8 +796,22 @@ plot(sin(x)/x, (x, -10, 10))          # the figure, with x/y min·max boxes
                                         # beside it; moving one resamples
 ```
 
-The sidebar also has `Auto Y`, `Reset`, and X/Y `in`/`out` buttons. On a true
-3D surface, `Auto Y` becomes `Auto Z`, and Z `in`/`out` buttons appear too.
+The sidebar also has `Auto Y`, `Reset`, X/Y `in`/`out` buttons, and a `Ticks`
+slider — §4.12a's `ticks=`, live, with the bottom of its track meaning "leave
+the count to Plotly". On a true 3D surface, `Auto Y` becomes `Auto Z`, and Z
+`in`/`out` buttons appear too.
+
+Zooming re-labels the horizontal axis, which is the other half of that control
+and the half you should not have to think about. Ticks chosen once for the
+initial domain are wrong as soon as the window moves: a π axis zoomed into a
+third of a period keeps the one label that still falls inside, and a numeric
+one grows a digit per decade of zoom while Plotly goes on asking for the same
+dozen ticks, until they overlap. So the choice is re-made from the window on
+screen — π ticks re-fitted to a finer or coarser multiple, dropped for plain
+numbers below about a quarter-period where no multiple of π is worth showing,
+and the numeric count thinned to what its own labels have room for. A 3D scene
+cannot do this (nothing there recomputes on a camera move), which is why
+`ticks=` exists for it.
 
 `Auto Y` fits the vertical window to the X range currently in the boxes: the
 automatic clip where a pole makes one necessary, and otherwise the extent of
@@ -802,9 +847,11 @@ more boxes, `z min`/`z max`: Z is the surface's *output*, not a domain, so
 moving them only ever re-applies `zlim` — cheap, no resample, same as Y on an
 ordinary curve.
 
-A 3D space curve has one sampled parameter: its controller labels that range
-with the parameter name (for example `t min` / `t max`) and also offers Z
-controls.
+Where the domain symbol is not the horizontal axis — a parametric, polar or 3D
+space curve, whose x and y are both outputs of one parameter — the first row is
+labelled with that parameter's name (`t`, say) rather than `x`. Moving it draws
+more or less of the curve; it does not crop the view. A space curve also offers
+Z controls.
 
 marimo needs no wrapper: its own `mo.ui.number()` composed directly with
 `plot()` gets the same live resampling for free, because marimo re-runs any
@@ -1308,7 +1355,8 @@ by property:
 | trace x/y data, mode, name, `connectgaps` | margins |
 | template, title, `showlegend` | hover mode and hover template |
 | x-axis range, π tickvals/ticktext | axis titles |
-| y-axis range and type (`log`) | zeroline styling |
+| axis tick density (`ticks`) | zeroline styling |
+| y-axis range and type (`log`) | |
 
 The omitted column is chrome: emitting it would bloat the teaching code without
 changing the picture. Everything that changes the picture is in the left

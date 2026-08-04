@@ -92,6 +92,26 @@ def _toggles(controls: Any) -> dict[str, Any]:
     }
 
 
+def _slider(controls: Any, caption: str) -> Any:
+    """The IntSlider on the row captioned ``caption`` — `Ticks`, `Density`…
+
+    By its label rather than its position: the sidebar carries more than one
+    slider now, and a test that unpacks "the" slider breaks every time a
+    control is added next to it — which says nothing about the control it was
+    written to check.
+    """
+    for row in _widgets(controls, "HBox"):
+        children = list(row.children)
+        if not children or children[0].__class__.__name__ != "Label":
+            continue
+        if children[0].value != caption:
+            continue
+        for child in children:
+            if child.__class__.__name__ == "IntSlider":
+                return child
+    raise AssertionError(f"no {caption!r} slider in this sidebar")
+
+
 def _label_texts(controls: Any) -> set[str]:
     """The captions beside the controls, which is where an axis is named."""
     return {label.value for label in _widgets(controls, "Label")}
@@ -915,7 +935,7 @@ class TestRangeControlsOnA3DSurface:
         pytest.importorskip("anywidget")
         result = plot((cos(t), sin(t), t), (t, 0, 13.5), verbose=False)
         figure_widget, controls = _unwrap(result.range_controls())
-        thickness, = _widgets(controls, "IntSlider")
+        thickness = _slider(controls, "Thickness")
 
         assert not any(
             toggle.description in {"On", "Off"}
@@ -974,7 +994,7 @@ class TestRangeControlsDisplayController:
             switch for switch in _widgets(controls, "ToggleButton")
             if switch.description == "Points"
         )
-        thickness, = _widgets(controls, "IntSlider")
+        thickness = _slider(controls, "Thickness")
         rows = [
             row for row in _widgets(controls, "HBox")
             if len(row.children) == 2 and isinstance(row.children[0], widgets.Label)
@@ -989,7 +1009,7 @@ class TestRangeControlsDisplayController:
             widget for widget in controls.children
             if isinstance(widget, widgets.HTML)
         ).value
-        assert [row.children[0].value for row in rows] == ["Scale", "Mode"]
+        assert [row.children[0].value for row in rows] == ["Scale", "Mode", "Ticks"]
         assert [len(row.children) for row in action_rows] == [3, 3]
         assert [button.description for row in action_rows for button in row.children] == [
             "Fit Y", "[X]+", "[Y]+", "Reset", "[X]−", "[Y]−",
@@ -1035,7 +1055,7 @@ class TestRangeControlsDisplayController:
             switch for switch in _widgets(controls, "ToggleButton")
             if switch.description == "Off"
         )
-        density, = _widgets(controls, "IntSlider")
+        density = _slider(controls, "Density")
 
         assert z_scale_switch.layout.width == "148px"
         assert [button.layout.width for button in z_scale_switch.children] == ["72px", "72px"]

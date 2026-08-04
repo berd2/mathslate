@@ -63,6 +63,7 @@ def figure_from_plan(plan: PlotPlan, options: RenderOptions | None = None) -> go
     ticks = pi_ticks_for(plan, options)
     if ticks is not None:
         figure.update_xaxes(tickmode="array", tickvals=list(ticks.values), ticktext=list(ticks.text))
+    _apply_tick_density(figure, options)
 
     if plan.kind in {"parametric", "polar"}:
         figure.update_yaxes(scaleanchor="x", scaleratio=1)
@@ -71,6 +72,41 @@ def figure_from_plan(plan: PlotPlan, options: RenderOptions | None = None) -> go
         _shade_bands(figure, plan)
 
     return figure
+
+
+def _apply_tick_density(figure: go.Figure, options: RenderOptions) -> None:
+    """The reader's ``ticks=`` on a flat figure's two axes.
+
+    A cap only bounds the *numeric* branch: under ``tickmode="array"`` — the π
+    labels set just above — Plotly draws the array it was given and ignores
+    ``nticks`` entirely. Hiding the labels still works there, which is the
+    behaviour ``ticks=False`` is actually asked for.
+    """
+    limit = options.tick_limit()
+    if limit is not None:
+        figure.update_xaxes(nticks=limit)
+        figure.update_yaxes(nticks=limit)
+    if not options.tick_labels_visible():
+        figure.update_xaxes(showticklabels=False)
+        figure.update_yaxes(showticklabels=False)
+
+
+def _scene_tick_density(options: RenderOptions) -> dict[str, object]:
+    """The same, as ``scene=`` entries — the only tick lever 3D offers.
+
+    Plotly re-lays a 2D axis's ticks against its pixel length on every zoom.
+    A scene's are positioned in the projection instead and nothing recomputes
+    them as the camera moves, so on a 3D plot this is not a refinement over an
+    automatic count that already works: it is the whole of the control.
+    """
+    scene: dict[str, object] = {}
+    limit = options.tick_limit()
+    for axis in ("xaxis", "yaxis", "zaxis"):
+        if limit is not None:
+            scene[f"{axis}_nticks"] = limit
+        if not options.tick_labels_visible():
+            scene[f"{axis}_showticklabels"] = False
+    return scene
 
 
 def _flat_traces(plan: PlotPlan, options: RenderOptions) -> list[go.Scatter]:
@@ -225,6 +261,7 @@ def _two_variable_figure(plan: PlotPlan, options: RenderOptions) -> go.Figure:
         limits = options.z_range(plan)
         if limits is not None:
             scene["zaxis_range"] = list(limits)
+        scene.update(_scene_tick_density(options))
         figure.update_layout(scene=scene)
     else:
         figure.update_xaxes(title_text=first)
@@ -232,6 +269,7 @@ def _two_variable_figure(plan: PlotPlan, options: RenderOptions) -> go.Figure:
         # A region or contour is flat, so its axes take a view window like any
         # 2D plot. The domain is the grid; xlim/ylim zoom what is shown of it.
         _apply_view_window(figure, plan, options)
+        _apply_tick_density(figure, options)
     return figure
 
 
@@ -258,6 +296,7 @@ def _distribution_figure(plan: PlotPlan, options: RenderOptions) -> go.Figure:
     figure.update_xaxes(title_text=labels[0])
     figure.update_yaxes(title_text=labels[1])
     _apply_view_window(figure, plan, options)
+    _apply_tick_density(figure, options)
     return figure
 
 
@@ -315,6 +354,7 @@ def _linalg_figure(plan: PlotPlan, options: RenderOptions) -> go.Figure:
         scaleratio=1,
     )
     _apply_view_window(figure, plan, options)
+    _apply_tick_density(figure, options)
     return figure
 
 
@@ -339,6 +379,7 @@ def _space_curve_figure(plan: PlotPlan, options: RenderOptions) -> go.Figure:
         scene["yaxis_range"] = list(options.ylim)
     if options.zlim is not None:
         scene["zaxis_range"] = list(options.zlim)
+    scene.update(_scene_tick_density(options))
     figure.update_layout(
         template=TEMPLATE,
         showlegend=options.legend_visible(plan),
@@ -527,12 +568,23 @@ def _x_title(plan: PlotPlan) -> str:
     return "x"
 
 
+def pi_axis(plan: PlotPlan, options: RenderOptions | None = None) -> bool:
+    """Whether π labels belong on this plan's horizontal axis *at all*.
+
+    Window-independent, unlike :func:`pi_ticks_for`, which also asks whether a
+    multiple of π lands often enough in one particular window. The live sidebar
+    needs the two questions separated: a reader zooming into a third of a period
+    has not stopped plotting a trig function, so the axis is still a π axis —
+    it is only this window that no π spacing fits, and the answer for it is
+    numbers until the reader zooms back out.
+    """
+    options = options or RenderOptions()
+    return options.wants_pi_ticks(plan) and axes.uses_pi_ticks(plan.exprs)
+
+
 def pi_ticks_for(plan: PlotPlan, options: RenderOptions | None = None) -> axes.PiTicks | None:
     """The π ticks for this plan, or ``None``. Shared with ``codegen``."""
-    options = options or RenderOptions()
-    if not options.wants_pi_ticks(plan):
-        return None
-    if not axes.uses_pi_ticks(plan.exprs):
+    if not pi_axis(plan, options):
         return None
     if plan.param_range is None:
         return None

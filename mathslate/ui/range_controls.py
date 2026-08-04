@@ -31,6 +31,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from ..errors import MathSlateError, UnsupportedInputError
+from ..render import axes, plotly_backend
 from ..render.options import DEFAULT_MESH_LINES
 from .adapters import Frontend, detect_frontend
 
@@ -62,6 +63,11 @@ _RANGE_CONTROLS_MIN_SIDEBAR_WIDTH: str = "240px"
 _RANGE_CONTROLS_FIGURE_CLASS: str = "mathslate-range-controls-figure"
 _RANGE_CONTROLS_INPUT_CLASS: str = "mathslate-range-controls-input"
 _RANGE_CONTROLS_COMPACT_CLASS: str = "mathslate-range-controls-compact"
+
+#: The Ticks slider's bottom position, meaning "no ceiling — Plotly's own
+#: count". A slider needs a number there and 2 is below `ticks=`'s own floor of
+#: 3, so it cannot be mistaken for a cap the reader actually asked for.
+_AUTO_TICKS: int = 2
 
 
 def set_range_controls(value: bool) -> None:
@@ -529,6 +535,47 @@ def build(
     )
 
     syncing = False
+    # Whether π labels belong on this axis at all — asked once, because it is a
+    # property of the expression rather than of the window being looked at.
+    pi_axis = plotly_backend.pi_axis(plan, controller_options)
+    reticking = False
+
+    def _retick(*_args: Any) -> None:
+        """Re-label the horizontal axis for the window Plotly is now showing.
+
+        Ticks are otherwise chosen once, from the domain the plot was built
+        over, and never revisited — so they are wrong the moment the reader
+        scrolls. A π array holds still while the window moves out from under
+        it: zoom `plot(sin(x))` into `[0, 0.5]` and the thirteen labels reduce
+        to the one that happens to fall inside, leaving an axis with `0` on it
+        and nothing else. Numeric labels fail the other way, growing a digit
+        per decade of zoom while Plotly keeps asking for the same dozen of
+        them, until they overlap.
+
+        Both are the same question — what should *this* window be labelled
+        with — and `axes.window_ticks` answers it. 3D is not reachable from
+        here: a scene's tick layout does not depend on a range that changes,
+        so the camera can come in without anything to observe. `ticks=` (and
+        the Ticks control below) is the whole of the lever there.
+        """
+        nonlocal reticking
+        if reticking or has_z:
+            return
+        window = figure_widget.layout.xaxis.range
+        if window is None or len(window) != 2:
+            return
+        low, high = float(window[0]), float(window[1])
+        if not (math.isfinite(low) and math.isfinite(high) and high > low):
+            return
+        payload = axes.window_ticks(
+            low, high, pi=pi_axis, ceiling=controller_options.tick_limit()
+        )
+        reticking = True
+        try:
+            with figure_widget.batch_update():
+                figure_widget.layout.xaxis.update(**payload)
+        finally:
+            reticking = False
 
     def _apply_thickness() -> None:
         """Scale trace widths, retaining each plot family's default width."""
@@ -550,6 +597,11 @@ def build(
             if has_z:
                 figure_widget.layout.scene.zaxis.type = z_scale
         _apply_thickness()
+        # The fresh figure labelled itself for the domain it was built over,
+        # which is this window — but only the π half of that decision is made
+        # by the renderer. Ask again so a numeric axis gets a count its own
+        # labels fit into as well.
+        _retick()
 
     def _redraw(_change: dict[str, Any] | None = None) -> None:
         nonlocal controller_options
@@ -575,6 +627,15 @@ def build(
 
     for box in boxes:
         box.observe(_redraw, names="value")
+
+    # Plotly syncs the axis range back to Python after a drag-zoom, a scroll or
+    # a double-click reset, so this is what makes the tick choice follow the
+    # reader rather than the domain. `on_change` and not `observe`: the range
+    # is nested inside the layout object, which the widget replaces wholesale
+    # on every redraw, and a traitlets observer registered on the old one would
+    # stop firing the first time the sidebar was used.
+    figure_widget.layout.on_change(_retick, "xaxis.range")
+    _retick()
 
     def _set_pairs(*pairs: tuple[Any, Any, float, float]) -> None:
         """Update related fields once, then redraw once."""
@@ -757,6 +818,27 @@ def build(
         controller_options = replace(controller_options, mesh=int(change["new"]))
         _redraw()
 
+    def _change_ticks(change: dict[str, Any]) -> None:
+        """Cap the labels per axis, or hand the count back to Plotly.
+
+        A 3D scene needs the full redraw — its tick counts live in the figure's
+        `scene`, which only the renderer writes. A flat one does not: the
+        ceiling is an argument to the same decision `_retick` already makes on
+        every zoom, so it re-labels in place rather than resampling the curve
+        to change a number of labels.
+        """
+        nonlocal controller_options
+        if change.get("name") != "value":
+            return
+        chosen = int(change["new"])
+        controller_options = replace(
+            controller_options, ticks=None if chosen <= _AUTO_TICKS else chosen
+        )
+        if has_z:
+            _redraw()
+        else:
+            _retick()
+
     def _change_thickness(change: dict[str, Any]) -> None:
         nonlocal thickness_percent
         if change.get("name") != "value":
@@ -907,6 +989,25 @@ def build(
     thickness_slider.observe(_change_thickness, names="value")
     thickness_slider.add_class(_RANGE_CONTROLS_COMPACT_CLASS)
 
+    # A ceiling on labels per axis, not a count — the same meaning `ticks=` has
+    # and the same one Plotly gives `nticks`, so the reader dragging this and
+    # the reader passing the keyword get the same figure. It starts at whatever
+    # the plot was built with, and `_AUTO_TICKS` at the bottom of the track is
+    # the "leave it to Plotly" position rather than a count of zero.
+    initial_ticks = controller_options.tick_limit()
+    tick_slider = widgets.IntSlider(
+        value=_AUTO_TICKS if initial_ticks is None else initial_ticks,
+        min=_AUTO_TICKS,
+        max=20,
+        step=1,
+        description="",
+        readout_format="d",
+        continuous_update=False,
+        layout=widgets.Layout(flex="1 1 0", min_width="0"),
+    )
+    tick_slider.observe(_change_ticks, names="value")
+    tick_slider.add_class(_RANGE_CONTROLS_COMPACT_CLASS)
+
     compact_button = widgets.Layout(width="100%", min_width="0")
     if has_z:
         auto_axis = widgets.Button(
@@ -1054,6 +1155,18 @@ def build(
             ),
         ])
 
+    tick_controls: list[Any] = [
+        widgets.HBox(
+            [
+                widgets.Label("Ticks", layout=widgets.Layout(width="50px")),
+                tick_slider,
+            ],
+            layout=widgets.Layout(
+                width="calc(100% - 4px)", margin="0 2px", align_items="center"
+            ),
+        )
+    ]
+
     thickness_controls: list[Any] = []
     if has_trace_thickness:
         thickness_controls.append(
@@ -1079,6 +1192,7 @@ def build(
             range_area,
             action_area,
             *display_controls,
+            *tick_controls,
             *thickness_controls,
             *surface_controls,
         ],

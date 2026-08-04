@@ -213,6 +213,34 @@ def _(exp, plot, sin, x):
 def _(mo):
     mo.md(
         r"""
+        Those labels are chosen for the window, not fixed to the domain. Drag
+        to zoom in the notebook and they are re-fitted: a finer multiple of π
+        while one still fits, plain numbers below about a quarter-period, and
+        fewer of them as they grow longer — a deep zoom needs eleven digits to
+        say where it is, and eleven of those do not fit where eleven short
+        ones did.
+
+        `ticks=` caps the count yourself. It matters most in 3D, where nothing
+        re-lays the labels as the camera comes in.
+        """
+    )
+    return
+
+
+@app.cell
+def _(plot, x, y):
+    from mathslate.render import axes
+    print("over [-10, 10] :", axes.window_ticks(-10, 10, pi=True)["ticktext"])
+    print("zoomed to [-4, 4] :", axes.window_ticks(-4, 4, pi=True)["ticktext"])
+    print("zoomed past pi :", axes.window_ticks(0, 0.5, pi=True)["tickmode"])
+    plot(x*y, ticks=4)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
         A log scale is **suggested, never applied**. A learner reading a
         log-scaled plot without realising it is worse off than one reading an
         awkward linear plot.

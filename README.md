@@ -213,6 +213,17 @@ plot((tan(t), t))    # broken at t = π/2 and 3π/2, not drawn out to 10¹⁶
 polar(tan(t))        # the same, through the polar reduction
 ```
 
+Axes read the expression: trigonometry gets π ticks, `exp` does not. They also
+read the *window*, which is the part you notice only when it is missing — zoom
+in and the labels are re-fitted rather than left where the first draw put them.
+A finer multiple of π while one still fits, plain numbers once none does, and
+fewer of them as a deep zoom makes each one longer.
+
+```python
+plot(x*y, ticks=4)      # or cap them yourself — which is the only lever in 3D,
+                        # where nothing re-lays labels as the camera comes in
+```
+
 ## What a function *is*: `analyze()`
 
 Explicit, never automatic — property detection is too slow and too noisy to run
@@ -376,7 +387,7 @@ check, and every example in `docs/`.
 
 ## Try it
 
-A guided tour of everything in v1.0, as a notebook you run yourself — 95 cells
+A guided tour of everything in v1.0, as a notebook you run yourself — 122 cells
 of curves, discontinuities, 3D, sliders, `analyze()`, tables, data fitting,
 worksheets and refusals. Nothing in it needs a network.
 

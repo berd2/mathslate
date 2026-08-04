@@ -299,7 +299,7 @@ print(plot(2.5).plan.kind)
 ```text
 plot(obj, *ranges, polar=False, kind=None, label=None, title=None,
      yscale=None, show_legend=None, points=None, exclusions=None,
-     mesh=True, xlim=None, ylim=None, zlim=None,
+     mesh=True, ticks=None, xlim=None, ylim=None, zlim=None,
      verbose=None, parameters=()) -> PlotResult
 ```
 
@@ -616,6 +616,29 @@ _ = plot(1/(x*y), zlim=(-10, 10), verbose=False)
 plot(sin(x), xlim=(5, 1))
 ```
 
+### 4.12a `ticks` — 축에 붙는 눈금 라벨의 개수
+
+그냥 두면 개수는 Plotly가 정합니다. `ticks=n`은 축당 `n`개로 제한하고, `ticks=False`는 라벨을 없애며, `ticks=None`(기본값)은 자동 선택으로 되돌립니다. 이 숫자는 **목표치가 아니라 상한**입니다 — Plotly는 여전히 반올림된 위치를 고르되, 그 개수를 넘기기 전에 멈춥니다.
+
+```python
+print(plot(exp(x), ticks=5, verbose=False).plotly.layout.xaxis.nticks)          # 5
+print(plot(exp(x), ticks=False, verbose=False).plotly.layout.xaxis.showticklabels)  # False
+```
+
+3D에서는 scene의 세 축 모두에 적용되며, 2D에서보다 훨씬 중요합니다. Plotly는 평면 축의 눈금은 화면이 바뀔 때마다 축의 픽셀 길이에 맞춰 다시 배치하지만, scene의 라벨은 투영된 위치에 놓이고 아무것도 이를 다시 계산하지 않습니다 — 그래서 카메라를 당기면 글자가 겹칩니다. 이것이 그에 대한 유일한 수단입니다:
+
+```python
+print(plot(x*y, ticks=4, verbose=False).plotly.layout.scene.zaxis.nticks)  # 4
+```
+
+3개 미만은 축에 읽을 수 있는 눈금이 남지 않으므로 — 라벨 2개는 양 끝점이고 그 사이에 아무것도 없습니다 — 그리지 않고 거부합니다:
+
+```python raises=UnsupportedInputError
+plot(sin(x), ticks=2)
+```
+
+2D에서는 쓸 일이 드뭅니다: 확대·축소하면 스스로 다시 라벨을 붙입니다(§4.13).
+
 ### 4.13 라이브 범위 컨트롤 — 그림을 그린 뒤에도 창을 움직이기
 
 `xlim`/`ylim`은 창을 한 번 정할 뿐이고, Plotly 자체의 드래그 확대는 이미 계산된 점들을 잘라 보여줄 뿐입니다 — 넓은 정의역의 10분의 1로 확대해도 원래 점 밀도의 10분의 1을 볼 뿐, 더 자세히 보이는 게 아닙니다. `range_controls()`는 대신 다시 샘플링합니다: X나 Y를 움직이면 새 창으로 `plot()`을 다시 호출하므로, 좁힐수록 원래 해상도 그대로 그려집니다.
@@ -627,7 +650,9 @@ plot(sin(x)/x, (x, -10, 10))          # 그림 옆에 x/y min·max 입력창이 
                                         # 하나를 바꾸면 재샘플링
 ```
 
-사이드바에는 `Auto Y`, `Reset`, X/Y `in`/`out` 버튼도 있습니다. 진짜 3D 곡면에서는 `Auto Y`가 `Auto Z`로 바뀌고 Z `in`/`out` 버튼도 함께 나타납니다.
+사이드바에는 `Auto Y`, `Reset`, X/Y `in`/`out` 버튼과 `Ticks` 슬라이더도 있습니다 — §4.12a의 `ticks=`를 실시간으로 조절하며, 트랙 맨 아래는 "개수를 Plotly에 맡김"을 뜻합니다. 진짜 3D 곡면에서는 `Auto Y`가 `Auto Z`로 바뀌고 Z `in`/`out` 버튼도 함께 나타납니다.
+
+확대·축소하면 가로축의 라벨이 다시 매겨지며, 이것이 그 컨트롤의 나머지 절반 — 신경 쓰지 않아도 되는 쪽 — 입니다. 처음 정의역에 맞춰 한 번 고른 눈금은 창이 움직이는 순간 틀린 것이 됩니다: π축을 주기의 3분의 1까지 확대하면 그 안에 남는 라벨 하나만 보이고, 숫자축은 확대 10배마다 자릿수가 하나씩 늘어나는데도 Plotly는 계속 같은 개수를 요구해 결국 글자가 겹칩니다. 그래서 화면에 보이는 창을 기준으로 선택을 다시 합니다 — π 눈금은 더 촘촘하거나 성긴 배수로 다시 맞추고, π의 배수를 보여줄 만하지 않은 약 1/4주기 아래에서는 일반 숫자로 내려가며, 숫자 개수는 그 라벨들이 실제로 들어갈 만큼으로 줄입니다. 3D scene은 이렇게 할 수 없어서(카메라를 움직여도 다시 계산되는 것이 없습니다) `ticks=`가 존재합니다.
 
 `Auto Y`는 현재 박스에 들어 있는 X 범위에 맞춰 세로 창을 맞춥니다. 극점 때문에 자동 클리핑이 필요한 경우에는 그 클리핑 창을, 그렇지 않으면 실제로 그려진 값들의 범위를 사용합니다. `plot()`에 넘긴 `ylim`은 그 안에 맞추는 것이 아니라 해제합니다 — 자동 맞춤을 요청하는 것은 고정해 둔 창과는 다른 창을 원한다는 뜻이기 때문입니다. 박스는 항상 축 자체의 단위를 담으며, `yscale="log"`에서는 `ylim`과 동일한 규칙에 따라 10의 거듭제곱 지수가 됩니다.
 
@@ -642,7 +667,7 @@ result.range_controls(width=800, height=500)
 
 곡면·등고선·영역은 두 축 모두 재샘플링되고, 일반 곡선은 Y가 X에서 유도되는 값이라 X만 재샘플링되고 Y는 `ylim` 뷰 조정으로 대체됩니다 — 애초에 값이 샘플링되지 않은 축에서 되찾을 해상도는 없기 때문입니다. 진짜 3D 곡면(`surface`/`psurface`, 평면인 `contour`/`region`은 제외)에는 `z min`/`z max` 입력창 2개가 더 생깁니다 — Z는 곡면의 *결과값*이지 정의역이 아니므로, 움직여도 `zlim`만 다시 적용될 뿐입니다 — 재샘플링 없이, 일반 곡선의 Y와 마찬가지로 저렴하게.
 
-3D 공간곡선은 하나의 매개변수만 다시 샘플링하므로 그 이름(예: `t min`/`t max`)으로 표시하며 Z 컨트롤도 함께 제공합니다.
+정의역 기호가 가로축이 아닌 경우 — x와 y가 모두 하나의 매개변수의 결과값인 매개변수 곡선, 극곡선, 3D 공간곡선 — 첫 행은 `x`가 아니라 그 매개변수의 이름(예: `t`)으로 표시됩니다. 이 값을 움직이면 곡선을 더 많이 또는 더 적게 그리는 것이지, 화면을 자르는 것이 아닙니다. 공간곡선은 Z 컨트롤도 함께 제공합니다.
 
 marimo는 별도 래퍼가 필요 없습니다: `mo.ui.number()`를 `plot()`과 직접 조합하면 marimo가 `.value`를 읽는 셀을 값이 바뀔 때마다 다시 실행해 주므로 같은 라이브 재샘플링을 공짜로 얻습니다.
 
@@ -1066,7 +1091,8 @@ print("pieces = [" in polar(tan(t), verbose=False).python())
 | 트레이스 x/y 데이터, 모드, 이름, `connectgaps` | 여백 (margins) |
 | 템플릿(template), 제목, `showlegend` | 호버(hover) 모드 및 호버 템플릿 |
 | x축 범위, π tickvals/ticktext | 축 제목 |
-| y축 범위 및 타입 (`log`) | zeroline 스타일링 |
+| 축 눈금 밀도 (`ticks`) | zeroline 스타일링 |
+| y축 범위 및 타입 (`log`) | |
 
 생략된 열(column)은 장식(chrome)에 불과합니다. 이것들까지 코드로 출력하면 정작 배워야 할 코드가 장황해지고 그림에는 아무 변화가 없기 때문입니다. 그림을 실질적으로 바꾸는 모든 요소는 왼쪽 열에 있습니다. 두 리스트는 모두 `mathslate.render.options.REPRODUCED` 및 `NOT_REPRODUCED`로 내보내어지며, 테스트 스위트가 이를 검증하므로 조용히 규칙이 망가지는 일은 없습니다.
 

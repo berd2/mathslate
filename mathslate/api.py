@@ -71,6 +71,7 @@ def plot(
     points: int | None = None,
     exclusions: Sequence[float] | bool | None = None,
     mesh: bool | int = True,
+    ticks: bool | int | None = None,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
     zlim: tuple[float, float] | None = None,
@@ -93,7 +94,7 @@ def plot(
     """
     options = _render_options(
         title=title, yscale=yscale, show_legend=show_legend, kind=kind,
-        mesh=mesh, xlim=xlim, ylim=ylim, zlim=zlim,
+        mesh=mesh, ticks=ticks, xlim=xlim, ylim=ylim, zlim=zlim,
     )
     config = _sampling_config(points, exclusions)
 
@@ -142,6 +143,7 @@ def _render_options(
     show_legend: bool | None = None,
     kind: str | None = None,
     mesh: bool | int = True,
+    ticks: bool | int | None = None,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
     zlim: tuple[float, float] | None = None,
@@ -164,6 +166,7 @@ def _render_options(
         show_legend=show_legend,
         kind=kind,
         mesh=_mesh_option(mesh),
+        ticks=_ticks_option(ticks),
         xlim=_view_limit(xlim, "xlim"),
         ylim=_view_limit(ylim, "ylim"),
         zlim=_view_limit(zlim, "zlim"),
@@ -191,6 +194,33 @@ def _mesh_option(mesh: bool | int | None) -> bool | int:
         return mesh
     raise UnsupportedInputError(
         f"mesh must be True, False, or a positive number of lines; got {mesh!r}."
+    )
+
+
+def _ticks_option(ticks: bool | int | None) -> bool | int | None:
+    """Validate ``ticks``: automatic, hidden, or a per-axis maximum.
+
+    Same three-valued shape as ``mesh`` and the same order of checks for the
+    same reason — ``bool`` is an ``int``, so ``ticks=False`` read as a number
+    would be a cap of zero, which Plotly takes as "as many as you like".
+
+    Two is the floor because a pair of labels is the axis's endpoints and no
+    scale between them; three is the fewest that says where the window is,
+    how wide it is, and which way it runs.
+    """
+    if ticks is None or isinstance(ticks, bool):
+        return ticks
+    if isinstance(ticks, int):
+        if ticks < 3:
+            raise UnsupportedInputError(
+                f"ticks={ticks!r} leaves the axis without a readable scale; "
+                "use at least 3, False to hide the labels, or None for the "
+                "automatic count."
+            )
+        return ticks
+    raise UnsupportedInputError(
+        f"ticks must be None, True, False, or a maximum number of labels "
+        f"per axis; got {ticks!r}."
     )
 
 
