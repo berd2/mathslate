@@ -22,7 +22,7 @@ import sympy as sp
 from . import codegen
 from ._text import safe_print
 from .core.analysis import Analysis, analyze_expression
-from .core.dispatch import PlotPlan, build_plan
+from .core.dispatch import REQUESTABLE_KINDS, PlotPlan, build_plan
 from .core.tables import DEFAULT_ROWS, Table, tabulate
 from .errors import UnsupportedInputError
 from .render import plotly_backend
@@ -331,10 +331,17 @@ class PlotResult:
                 f"a {plan.kind} plot has no expression to resample; its range "
                 "cannot be changed live."
             )
-        # Keep the tuple form for a space curve: ``build_plan`` uses that
-        # shape (three expressions plus one parameter range) to distinguish a
-        # single 3D curve from several ordinary 2D curves.
-        obj: object = plan.exprs[0] if len(plan.exprs) == 1 else tuple(plan.exprs)
+        # What to hand back to ``build_plan``. A relation-driven plan says so
+        # itself, because its ``exprs`` hold the difference rather than the
+        # relation and would rebuild as a plain curve or surface. Otherwise the
+        # expressions are the object — kept as a tuple where there are several,
+        # since that shape is what distinguishes one parametric curve from
+        # several ordinary 2D ones.
+        obj: object
+        if plan.relation is not None:
+            obj = plan.relation
+        else:
+            obj = plan.exprs[0] if len(plan.exprs) == 1 else tuple(plan.exprs)
 
         if plan.axes is not None:
             x_symbol, y_symbol = plan.axes
@@ -369,10 +376,16 @@ class PlotResult:
                 "controls only apply to a plotted expression."
             )
 
-        # ``space`` is an inferred internal kind, not a public ``kind=``
-        # value accepted by ``build_plan``. Re-infer it from the three
-        # components and their one shared parameter when resampling.
-        kind = None if plan.kind == "space" else plan.kind
+        # Most kinds are *inferred* from the object's shape and are not values
+        # ``build_plan`` accepts by name — ``space`` from three components over
+        # one parameter, ``parametric`` from two, ``polar`` from the flag,
+        # ``implicit``/``band``/``region`` from the relation. Handing such a
+        # kind back raises ``unknown kind=...``, which the sidebar cannot tell
+        # from a mid-edit value and so swallows: the controls simply stop
+        # working. Pass through only what can be asked for — which is also the
+        # only place the distinction matters, ``contour`` being a genuine
+        # choice that re-inference would lose — and let the rest be re-derived.
+        kind = plan.kind if plan.kind in REQUESTABLE_KINDS else None
         new_plan = build_plan(obj, *ranges, polar=plan.polar, kind=kind, config=plan.config)
         figure = plotly_backend.figure_from_plan(new_plan, options)
         return PlotResult(new_plan, figure, options)

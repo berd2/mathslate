@@ -417,7 +417,17 @@ def build(
     box_layout = widgets.Layout(
         width="calc(50% - 12px)", flex="1 1 0", min_width="0"
     )
-    domain_label = plan.symbol.name if plan.kind == "space" and plan.symbol else "x"
+    # Label the first row with what it actually moves. On a curve or a surface
+    # the domain symbol *is* the horizontal axis, so "x" is both true and the
+    # more familiar of the two names. On a parametric, polar or space curve it
+    # is not: those boxes hold the parameter's window, and calling it "x" told
+    # the reader they were cropping the horizontal axis while they were in fact
+    # drawing more or less of the curve.
+    domain_label = (
+        plan.symbol.name
+        if plan.symbol is not None and plan.kind in {"parametric", "polar", "space"}
+        else "x"
+    )
     x_min = widgets.FloatText(
         value=x_lo, description="", step=None,
         style=box_style, layout=box_layout,

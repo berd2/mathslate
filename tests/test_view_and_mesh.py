@@ -26,7 +26,7 @@ import plotly.graph_objects as go
 import pytest
 import sympy as sp
 
-from mathslate import cos, exp, plot, sin, slider, t, tan, theta, x, y, z
+from mathslate import cos, exp, plot, polar, sin, slider, t, tan, theta, x, y, z
 from mathslate.errors import UnsupportedInputError
 from mathslate.ui import release_all
 
@@ -82,6 +82,19 @@ def _buttons(controls: Any) -> dict[str, Any]:
 
     visit(controls)
     return found
+
+
+def _toggles(controls: Any) -> dict[str, Any]:
+    """Every ToggleButton, keyed by its caption — `Line`, `Points`, `Log`…"""
+    return {
+        toggle.description: toggle
+        for toggle in _widgets(controls, "ToggleButton")
+    }
+
+
+def _label_texts(controls: Any) -> set[str]:
+    """The captions beside the controls, which is where an axis is named."""
+    return {label.value for label in _widgets(controls, "Label")}
 
 
 def _widgets(controls: Any, class_name: str) -> tuple[Any, ...]:
@@ -438,6 +451,83 @@ class TestLiveRangeResampling:
             interact.release_all()
 
 
+class TestEveryOfferedKindCanActuallyResample:
+    """`_resamplable()` promises the sidebar; `_replotted()` has to deliver it.
+
+    Those two predicates are what decide whether a reader gets controls and
+    whether moving them does anything, and they were derived independently:
+    `_replotted` handed the plan's own `kind` back to `build_plan`, which
+    accepts only the seven a caller may *ask* for. Every inferred kind —
+    parametric, polar, psurface, implicit, band, region — therefore raised
+    `unknown kind=...` on the first keystroke, and the sidebar swallowed it as
+    a mid-edit value: six of the ten families shipped with dead controls and no
+    error to show for it.
+
+    So the test is not "parametric resamples" but "everything offered
+    resamples", parameterised over the families themselves. A new inferred kind
+    that forgets this fails here rather than in a notebook.
+    """
+
+    CASES: dict[str, Any] = {
+        "curve": lambda: plot(sin(x), verbose=False),
+        "parametric": lambda: plot((cos(t), sin(t)), verbose=False),
+        "polar": lambda: polar(1 + cos(t), verbose=False),
+        "space": lambda: plot((cos(t), sin(t), t), verbose=False),
+        "surface": lambda: plot(SADDLE, verbose=False),
+        "contour": lambda: plot(SADDLE, kind="contour", verbose=False),
+        "psurface": lambda: plot(TORUS, verbose=False),
+        "implicit": lambda: plot(sp.Eq(x**2 + y**2, 1), verbose=False),
+        "band": lambda: plot(sin(x) > 0, verbose=False),
+        "region": lambda: plot(x**2 + y**2 < 1, verbose=False),
+    }
+
+    @pytest.mark.parametrize("name", sorted(CASES))
+    def test_a_kind_the_sidebar_offers_survives_a_range_edit(self, name: str) -> None:
+        result = self.CASES[name]()
+        assert result._resamplable(), f"{name} would not be offered controls"
+        moved = result._replotted(x_range=(0.5, 2.0))
+        assert moved.plan.param_range == (0.5, 2.0)
+        # The picture has to stay the *same kind* of picture. Re-inferring from
+        # `exprs` alone turns an implicit curve into a surface and an inequality
+        # into the plain curve of its difference — both draw something, which is
+        # why this asserts the kind rather than merely that nothing raised.
+        assert moved.plan.kind == result.plan.kind
+
+    def test_an_inequality_keeps_shading_the_side_it_was_asked_about(self) -> None:
+        """`exprs` holds `sin(x)`, which is also what `sin(x) < 0` reduces to.
+
+        Rebuilding from the difference would shade the complement without
+        raising, so the relation itself is what the plan carries forward.
+        """
+        below = plot(sin(x) < 0, (x, 0, 6), verbose=False)
+        moved = below._replotted(x_range=(0.0, 6.0))
+        assert moved.plan.bands == below.plan.bands
+        assert moved.plan.bands  # and it is not the empty shading either way
+
+    def test_contour_stays_flat_rather_than_reverting_to_the_surface(self) -> None:
+        """The one kind that is both requestable and unrecoverable by inference."""
+        flat = plot(SADDLE, kind="contour", verbose=False)
+        assert flat._replotted(x_range=(-1.0, 1.0)).plan.kind == "contour"
+
+    def test_display_options_reach_a_parametric_curve_too(self) -> None:
+        """`Mode = Points` is a redraw, so it died of the same cause."""
+        from dataclasses import replace
+
+        circle = plot((cos(t), sin(t)), verbose=False)
+        assert circle.plotly.data[0].mode == "lines"
+        points = circle._replotted(
+            x_range=circle.plan.param_range,
+            render_options=replace(circle._options, kind="scatter"),
+        )
+        assert points.plotly.data[0].mode == "markers"
+
+    def test_a_parametric_y_edit_reaches_the_figure(self) -> None:
+        """Y is a view clip here: x and y are both outputs of the parameter."""
+        circle = plot((cos(t), sin(t)), verbose=False)
+        cropped = circle._replotted(y_range=(-0.5, 0.5))
+        assert tuple(cropped.plotly.layout.yaxis.range) == (-0.5, 0.5)
+
+
 class TestLiveRangeResamplingWidget:
     """The ipywidgets path — best-effort, like `Slider.widget()`'s (PRD 6.2)."""
 
@@ -508,6 +598,51 @@ class TestLiveRangeResamplingWidget:
         result = plot(sin(x) / x, (x, -10, 10), verbose=False)
         with pytest.raises(UnsupportedInputError, match="finite numbers"):
             result._replotted(x_range=(float("nan"), 1.0))
+
+    def test_a_parametric_curve_answers_the_sidebar_end_to_end(
+        self, _colab: None
+    ) -> None:
+        """The reported case, driven through the real widget rather than around it.
+
+        `_replotted` raising was invisible from the outside: `_redraw` treats
+        every `MathSlateError` as a value still being typed and returns, so the
+        only symptom was a figure that never changed. Assert the figure.
+        """
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        circle = plot((cos(t), sin(t)), verbose=False)
+        figure_widget, controls = _unwrap(circle.range_controls())
+        x_min, x_max, y_min, y_max = _number_controls(controls)
+
+        before = np.asarray(figure_widget.data[0].x, dtype=np.float64).copy()
+        x_max.value = 3.0  # half the circle
+        after = np.asarray(figure_widget.data[0].x, dtype=np.float64)
+        assert after.shape != before.shape or not np.array_equal(after, before)
+
+        y_min.value, y_max.value = -0.5, 0.5
+        assert tuple(figure_widget.layout.yaxis.range) == (-0.5, 0.5)
+
+    def test_points_mode_reaches_a_parametric_curve(self, _colab: None) -> None:
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        circle = plot((cos(t), sin(t)), verbose=False)
+        figure_widget, controls = _unwrap(circle.range_controls())
+
+        assert figure_widget.data[0].mode == "lines"
+        _toggles(controls)["Points"].value = True
+        assert figure_widget.data[0].mode == "markers"
+
+    def test_the_domain_row_is_labelled_with_what_it_moves(
+        self, _colab: None
+    ) -> None:
+        """On a parametric curve those boxes hold `t`, not the horizontal axis."""
+        pytest.importorskip("ipywidgets")
+        pytest.importorskip("anywidget")
+        _, controls = _unwrap(plot((cos(t), sin(t)), verbose=False).range_controls())
+        assert "t" in _label_texts(controls)
+
+        _, plain = _unwrap(plot(sin(x), verbose=False).range_controls())
+        assert "x" in _label_texts(plain)
 
 
 class TestAutoYFitsTheCurrentXDomain:

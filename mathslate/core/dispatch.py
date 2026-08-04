@@ -92,6 +92,24 @@ TWO_VARIABLE: tuple[str, ...] = (
     "surface", "contour", "implicit", "psurface", "region",
 )
 
+#: The ``kind=`` values :func:`build_plan` accepts *from a caller*. Every other
+#: member of ``PlotKind`` — ``parametric``, ``polar``, ``space``, ``psurface``,
+#: ``implicit``, ``band``, ``region``, ``data``, ``callable``, ``linalg`` — is
+#: inferred from the object's shape and cannot be asked for by name (PRD 5.1:
+#: the two cases inference cannot decide are ``polar()`` and ``kind="contour"``,
+#: and those are the only ones spelled out).
+#:
+#: Exported rather than written inline below because anything that *rebuilds* a
+#: plan has to feed its kind back through here — :meth:`PlotResult._replotted`
+#: does, on every keystroke in the range-control sidebar — and reading a plan's
+#: own ``kind`` back is only valid for these. The set drifting from the check
+#: was exactly the defect: an inferred kind handed back raised ``unknown
+#: kind=...``, which the sidebar swallowed as a mid-edit value, leaving every
+#: control dead on six of the plot families.
+REQUESTABLE_KINDS: frozenset[str] = frozenset(
+    {"line", "scatter", "curve", "surface", "contour", "hist", "box"}
+)
+
 
 @dataclass(frozen=True)
 class Series:
@@ -125,6 +143,16 @@ class PlotPlan:
     matrix: np.ndarray | None = None
     #: ``(eigenvalue, unit eigenvector)`` pairs, real ones only.
     eigen: list[tuple[float, np.ndarray]] = field(default_factory=list)
+    #: The relation an ``implicit``, ``band`` or ``region`` plan came from.
+    #:
+    #: ``exprs`` cannot stand in for it on the first two: both store the
+    #: *difference* ``lhs - rhs``, which is what gets sampled but not what
+    #: identifies the picture. ``Eq(x**2 + y**2, 1)`` and ``x**2 + y**2 - 1``
+    #: reduce to the same expression and draw a curve and a surface; ``sin(x) >
+    #: 0`` and ``sin(x) < 0`` reduce to the same one and shade opposite
+    #: intervals. Anything rebuilding the plan (:meth:`PlotResult._replotted`)
+    #: therefore has to start from this rather than from ``exprs``.
+    relation: sp.Rel | None = None
     #: ``(start, end)`` intervals to shade, for a ``band`` plot.
     bands: tuple[tuple[float, float], ...] = ()
     #: Whether `solveset` solved the inequality or the intervals were sampled.
@@ -213,9 +241,7 @@ def build_plan(
     specs = [binding.parse_range(r) for r in ranges]
     parameter_values = _normalise_parameters(parameters)
 
-    if kind not in (
-        None, "line", "scatter", "curve", "surface", "contour", "hist", "box"
-    ):
+    if kind is not None and kind not in REQUESTABLE_KINDS:
         raise UnsupportedInputError(f"unknown kind={kind!r}")
 
     if isinstance(obj, Dataset):
@@ -641,6 +667,7 @@ def _plan_region(
         symbol=symbols[0],
         param_range=xrange,
         exprs=(frozen,),
+        relation=frozen if isinstance(frozen, sp.Rel) else None,
         notes=_dedupe(list(sample.notes)),
         config=config,
         axes=symbols,
@@ -698,6 +725,7 @@ def _plan_band(
         symbol=symbol,
         param_range=span,
         exprs=(frozen,),
+        relation=frozen_relation,
         notes=_dedupe(notes),
         config=config,
         bands=tuple(bands),
@@ -843,6 +871,9 @@ def _plan_implicit(
         symbol=symbols[0],
         param_range=xrange,
         exprs=(frozen,),
+        # Not the caller's `relation`: any bound parameter has been substituted
+        # into `frozen`, and resampling must not put the free symbol back.
+        relation=sp.Eq(frozen, sp.Integer(0)),
         notes=_dedupe(list(sample.notes)),
         config=config,
         axes=symbols,
