@@ -34,13 +34,13 @@ def figure_from_plan(plan: PlotPlan, options: RenderOptions | None = None) -> go
     """
     options = options or RenderOptions()
     if plan.two_variable:
-        return _two_variable_figure(plan, options)
+        return _apply_size(_two_variable_figure(plan, options), options)
     if plan.kind == "space":
-        return _space_curve_figure(plan, options)
+        return _apply_size(_space_curve_figure(plan, options), options)
     if plan.kind in {"hist", "box"}:
-        return _distribution_figure(plan, options)
+        return _apply_size(_distribution_figure(plan, options), options)
     if plan.kind == "linalg":
-        return _linalg_figure(plan, options)
+        return _apply_size(_linalg_figure(plan, options), options)
 
     figure = go.Figure(data=_flat_traces(plan, options))
 
@@ -71,6 +71,25 @@ def figure_from_plan(plan: PlotPlan, options: RenderOptions | None = None) -> go
     if plan.kind == "band":
         _shade_bands(figure, plan)
 
+    return _apply_size(figure, options)
+
+
+def _apply_size(figure: go.Figure, options: RenderOptions) -> go.Figure:
+    """The figure's pixel size — every kind, in one place.
+
+    Applied at the one gate every figure leaves through rather than inside each
+    builder, because "how tall is a plot" has no per-kind answer and six copies
+    of it would eventually disagree. A dimension left ``None`` is not written
+    at all: Plotly reads an unset width as "measure the container", which is
+    what makes a figure fill its notebook cell, and writing an explicit number
+    there would trade that for a fixed size that is wrong on every other
+    screen.
+    """
+    width, height = options.figure_size()
+    if width is not None:
+        figure.update_layout(width=int(width))
+    if height is not None:
+        figure.update_layout(height=int(height))
     return figure
 
 

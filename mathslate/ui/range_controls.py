@@ -520,6 +520,17 @@ def build(
     # PlotResult. Every redraw starts from them so a changed scale, mode or
     # mesh density survives the next X/Y/Z range edit.
     controller_options = result._options
+    # A size given to *this call* has to go in there too, not only onto the
+    # widget above. `_apply` replaces the whole layout with the fresh figure's
+    # on every redraw, so a size that lived only on the widget was overwritten
+    # by the rebuilt figure's the first time a box was edited — silently, and
+    # only for a caller who had asked for a particular size.
+    if width is not None or height is not None:
+        controller_options = replace(
+            controller_options,
+            width=controller_options.width if width is None else int(width),
+            height=controller_options.height if height is None else int(height),
+        )
     z_scale = "linear"
     thickness_percent = 100
     has_flat_trace_mode = not resamples_y and not has_z

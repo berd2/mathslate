@@ -279,6 +279,23 @@ plot(readings, kind="hist")       # their shape
 plot(Matrix([[2, 1], [1, 3]]))    # a matrix as what it does, with eigenvectors
 ```
 
+## How big, and how much chrome
+
+In Jupyter a bare `plot()` shows the figure with a live range-control sidebar
+beside it. Both halves of that are yours to change:
+
+```python
+plot(sin(x), height=800)          # this plot, taller
+plot(sin(x), controls=False)      # this plot, no sidebar — the cell is all graph
+set_plot_size(height=720)         # every later plot, once at the top of a notebook
+set_range_controls(False)         # every later plot, plain figure
+```
+
+Height defaults to 540px rather than Plotly's 450 — a notebook cell is not a
+dashboard tile, and a fifth of the width goes to the sidebar. Width is left
+unset on purpose so the figure fills its cell; set it when you want a fixed
+size and mean it.
+
 ## Numbers, and one file to hand out
 
 ```python
@@ -387,7 +404,7 @@ check, and every example in `docs/`.
 
 ## Try it
 
-A guided tour of everything in v1.0, as a notebook you run yourself — 122 cells
+A guided tour of everything in v1.0, as a notebook you run yourself — 124 cells
 of curves, discontinuities, 3D, sliders, `analyze()`, tables, data fitting,
 worksheets and refusals. Nothing in it needs a network.
 

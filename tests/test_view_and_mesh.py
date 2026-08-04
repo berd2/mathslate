@@ -347,14 +347,39 @@ class TestEveryEntryPointAndKindHonoursThem:
         because they were added to `plot()` and to neither of `animate()`'s two
         hand-written name lists. This asserts the coverage itself, so the next
         keyword cannot repeat it.
+
+        `_DISPLAY_KEYWORDS` is the one exemption and it is declared, not
+        inferred: those decide what a notebook cell *shows* rather than what is
+        drawn, an animation never shows the sidebar they control, and accepting
+        one there would be an option that ignores its argument. Anything else
+        missing is the old bug coming back.
         """
         import inspect
 
         from mathslate import api
 
-        reachable = api._RENDER_KEYWORDS | api._PLAN_KEYWORDS | {"verbose"}
+        reachable = (
+            api._RENDER_KEYWORDS
+            | api._PLAN_KEYWORDS
+            | api._DISPLAY_KEYWORDS
+            | {"verbose"}
+        )
         plot_keywords = set(inspect.signature(api.plot).parameters) - {"obj", "ranges"}
         assert plot_keywords <= reachable
+
+    def test_a_display_only_keyword_is_refused_by_animate_rather_than_ignored(
+        self,
+    ) -> None:
+        """Exempt from the coverage rule, not from the no-silent-drop rule."""
+        from mathslate import animate, slider
+        from mathslate.ui import interact
+
+        a = slider(1, 3, default=2, name="display_kw_a")
+        try:
+            with pytest.raises(UnsupportedInputError, match="controls"):
+                animate(a * sin(x), (x, -6, 6), controls=False, verbose=False)
+        finally:
+            interact.release_all()
 
     @pytest.mark.parametrize(
         "build",

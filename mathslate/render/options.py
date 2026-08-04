@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..core.dispatch import PlotPlan
+from ..errors import UnsupportedInputError
 
 __all__ = [
     "RenderOptions",
@@ -23,6 +24,9 @@ __all__ = [
     "MESH_LINE",
     "REGION_FILL",
     "DEFAULT_MESH_LINES",
+    "DEFAULT_HEIGHT",
+    "set_plot_size",
+    "get_plot_size",
 ]
 
 #: Figure properties ``show_python()`` guarantees to reproduce.
@@ -37,6 +41,7 @@ REPRODUCED: tuple[str, ...] = (
     "xaxis range",
     "xaxis tickvals/ticktext",
     "axis tick density",
+    "figure width/height",
     "yaxis range",
     "yaxis type",
     "zaxis range",
@@ -70,6 +75,65 @@ REGION_FILL: str = "rgba(31, 119, 180, 0.35)"
 #: lines than the underlying sample grid, and reported as visibly sparse.
 DEFAULT_MESH_LINES: int = 24
 
+#: How tall a figure is when nothing asks for a particular height.
+#:
+#: Plotly's own default is 450px, chosen for a dashboard tile. A notebook cell
+#: is the whole width of the page and the graph is the thing being read, not a
+#: panel beside other panels — and once the range-control sidebar takes a fifth
+#: of the width, 450 leaves a curve squeezed into a letterbox. This is that
+#: default times 1.2, which is enough to stop the squeeze without pushing the
+#: report line under the fold on a laptop screen.
+DEFAULT_HEIGHT: int = 540
+
+#: The size a plot takes when it is given none. ``height`` starts at
+#: :data:`DEFAULT_HEIGHT`; ``width`` starts unset, and staying unset is what
+#: lets a figure fill the cell it is in (a pixel width would leave a gap beside
+#: it on a wide screen and clip it on a narrow one, which is the trap §23.1
+#: already fell into with the sidebar split).
+_DEFAULT_SIZE: dict[str, int | None] = {"width": None, "height": DEFAULT_HEIGHT}
+
+
+def set_plot_size(
+    width: int | None = None, height: int | None = None, *, reset: bool = False
+) -> None:
+    """Set the size every later plot takes unless it names its own.
+
+    The notebook-wide twin of ``plot(width=..., height=...)``, for the reader
+    who wants taller graphs generally rather than on one call — the same shape
+    ``set_range_controls`` has, and for the same reason: a preference stated
+    once at the top of a notebook should not have to be repeated on every cell.
+
+    ``width=None``/``height=None`` leave that dimension alone rather than
+    clearing it, so raising the height does not silently drop a width set a
+    moment ago. ``reset=True`` restores both to the shipped defaults.
+    """
+    if reset:
+        _DEFAULT_SIZE.update(width=None, height=DEFAULT_HEIGHT)
+        return
+    if width is not None:
+        _DEFAULT_SIZE["width"] = _positive_pixels(width, "width")
+    if height is not None:
+        _DEFAULT_SIZE["height"] = _positive_pixels(height, "height")
+
+
+def get_plot_size() -> tuple[int | None, int | None]:
+    """The ``(width, height)`` a bare ``plot()`` currently uses."""
+    return _DEFAULT_SIZE["width"], _DEFAULT_SIZE["height"]
+
+
+def _positive_pixels(value: object, name: str) -> int:
+    """A size is a positive whole number of pixels or it is a mistake."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise UnsupportedInputError(
+            f"{name} must be a number of pixels; got {value!r}."
+        )
+    if not value > 0:
+        raise UnsupportedInputError(
+            f"{name}={value!r} is not a size a figure can be drawn at; "
+            "give a positive number of pixels, or None for the default."
+        )
+    return int(value)
+
 
 @dataclass(frozen=True)
 class RenderOptions:
@@ -96,6 +160,12 @@ class RenderOptions:
     #: length on every zoom but positions scene labels in the projection, so
     #: they crowd as the camera comes in and nothing recomputes them.
     ticks: bool | int | None = None
+    #: Figure size in pixels. ``None`` on either falls back to whatever
+    #: :func:`set_plot_size` last established — the height to
+    #: :data:`DEFAULT_HEIGHT`, the width to unset, which is what lets the
+    #: figure fill the cell rather than sit at a fixed size inside it.
+    width: int | None = None
+    height: int | None = None
     #: View-window overrides. A range like ``(x, -10, 10)`` sets the *domain* —
     #: where the function is sampled; these set the *window* — what the axis
     #: shows. They differ whenever the two should: to undo the automatic y-clip
@@ -114,6 +184,20 @@ class RenderOptions:
         if plan.kind == "data" and plan.series[0].sample.n_points <= 200:
             return "markers"
         return "lines"
+
+    def figure_size(self) -> tuple[int | None, int | None]:
+        """``(width, height)`` in pixels — this call's, or the notebook's.
+
+        Resolved here rather than at the point of use so the figure and the
+        program ``show_python()`` emits cannot end up different sizes, and so
+        that ``set_plot_size()`` applies to a plot built before it was called
+        only if that plot is redrawn — which is what a *default* means.
+        """
+        width, height = get_plot_size()
+        return (
+            width if self.width is None else self.width,
+            height if self.height is None else self.height,
+        )
 
     def tick_limit(self) -> int | None:
         """The reader's ``ticks=`` as a Plotly ``nticks``, or ``None`` for auto.

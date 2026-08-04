@@ -133,7 +133,7 @@ Nothing else in this manual changes; only the import line does.
 
 ## 2. The public surface
 
-MathSlate introduces **15 public names**, against a budget of 20 (PRD §20).
+MathSlate introduces **19 public names**, against a budget of 20 (PRD §20).
 Everything else it exposes is SymPy, re-exported unchanged.
 
 ### New in MathSlate
@@ -155,6 +155,7 @@ Everything else it exposes is SymPy, re-exported unchanged.
 | `dataset()` | v1.0 | the bridge from symbolic to data — §13 |
 | `Dataset` | v1.0 | the type `dataset()` returns — §13 |
 | `set_range_controls()` / `get_range_controls()` | v1.5 | whether a bare `plot()` shows `range_controls()` by default — §4.13, §21 |
+| `set_plot_size()` / `get_plot_size()` | v1.6 | the size every later plot takes — §4.12b |
 
 ```python
 import mathslate
@@ -349,7 +350,8 @@ you meant rather than guessing:
 ```text
 plot(obj, *ranges, polar=False, kind=None, label=None, title=None,
      yscale=None, show_legend=None, points=None, exclusions=None,
-     mesh=True, ticks=None, xlim=None, ylim=None, zlim=None,
+     mesh=True, ticks=None, width=None, height=None,
+     xlim=None, ylim=None, zlim=None, controls=None,
      verbose=None, parameters=()) -> PlotResult
 ```
 
@@ -778,6 +780,66 @@ plot(sin(x), ticks=2)
 
 In 2D you rarely need it: zooming re-labels itself (§4.13).
 
+### 4.12b `width` and `height` — how big the figure is
+
+A plot is `DEFAULT_HEIGHT` (540px) tall unless it is told otherwise. Plotly's
+own default is 450, which is a dashboard tile's height; a notebook cell is the
+full width of the page and the graph is the thing being read, and once the
+sidebar of §4.13 takes its fifth of the width, 450 reads as a letterbox.
+
+```python
+from mathslate.render.options import DEFAULT_HEIGHT
+print(plot(sin(x), verbose=False).plotly.layout.height == DEFAULT_HEIGHT)  # True
+print(plot(sin(x), height=800, verbose=False).plotly.layout.height)        # 800
+```
+
+**Width is deliberately unset by default.** Plotly reads an unset width as
+"measure the container", which is what lets a figure fill its cell; a pixel
+width leaves a gap beside it on a wide screen and clips it on a narrow one.
+Set it when you want a fixed size and mean it:
+
+```python
+print(plot(sin(x), verbose=False).plotly.layout.width)                 # None
+print(plot(sin(x), width=1000, verbose=False).plotly.layout.width)     # 1000
+```
+
+`set_plot_size()` moves the default for every later plot, which is the version
+you want at the top of a notebook rather than on every cell. Naming one
+dimension leaves the other alone, and `reset=True` restores both:
+
+```python
+from mathslate import set_plot_size, get_plot_size
+
+set_plot_size(height=720)
+print(plot(sin(x), verbose=False).plotly.layout.height)         # 720
+print(plot(sin(x), height=300, verbose=False).plotly.layout.height)  # 300 — a call still wins
+set_plot_size(reset=True)
+print(get_plot_size())                                          # (None, 540)
+```
+
+Both are reproduced by `show_python()`: a figure and a program said to build it
+must not come out different sizes.
+
+### 4.12c `controls` — turning the sidebar off for one plot
+
+The range-control sidebar (§4.13) earns its fifth of the width on a curve you
+are exploring, and not on one you are only looking at. `controls=False` gives
+the plain figure back for this plot; `controls=True` asks for it even when
+`set_range_controls(False)` has turned it off notebook-wide.
+
+```text
+plot(sin(x), controls=False)     # the whole cell width is the graph
+plot(sin(x))                     # figure + sidebar, the default
+```
+
+It declines the *default display*, not the method: `.range_controls()` called
+by name still builds the widget. And it changes nothing about the figure, so
+`show_python()` emits the same program either way — where a plot is shown is
+not part of what it is.
+
+Use `set_range_controls(False)` when you want that for the whole notebook;
+`controls=` is the per-plot override of it.
+
 ### 4.13 Live range controls — moving the window after the figure exists
 
 `xlim`/`ylim` choose a window once, and Plotly's own drag-to-zoom only crops
@@ -846,6 +908,9 @@ per-point resolution to recover on an axis nothing was sampled along. A real
 more boxes, `z min`/`z max`: Z is the surface's *output*, not a domain, so
 moving them only ever re-applies `zlim` — cheap, no resample, same as Y on an
 ordinary curve.
+
+If you do not want the sidebar at all, `controls=False` (§4.12c) turns it off
+for one plot and `set_range_controls(False)` for the whole notebook.
 
 Where the domain symbol is not the horizontal axis — a parametric, polar or 3D
 space curve, whose x and y are both outputs of one parameter — the first row is

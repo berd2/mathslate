@@ -188,6 +188,26 @@ CELLS: list[str] = [
     """,
     md(
         """
+        How much of the cell the graph gets is yours too. A plot is 540px tall
+        by default — Plotly's own 450 is a dashboard tile's height, and in
+        Jupyter a fifth of the width already goes to the live range-control
+        sidebar beside the figure. `height=` changes one plot,
+        `set_plot_size()` changes every later one, and `controls=False` gives
+        the whole cell back to the graph when you only want to look at it.
+
+        Width is left unset on purpose, which is what lets a figure fill
+        whatever cell it lands in.
+        """
+    ),
+    """
+    from mathslate import set_plot_size, get_plot_size
+    print("default (width, height):", get_plot_size())
+    print("one plot  :", plot(sin(x), height=700, verbose=False).plotly.layout.height)
+    print("no sidebar:", plot(sin(x), controls=False, verbose=False).plan.kind)
+    plot(sin(x)/x, height=420, controls=False)
+    """,
+    md(
+        """
         A log scale is **suggested, never applied**. A learner reading a
         log-scaled plot without realising it is worse off than one reading an
         awkward linear plot.

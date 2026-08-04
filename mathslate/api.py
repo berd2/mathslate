@@ -23,7 +23,12 @@ from .core.sampling import DEFAULT_CONFIG, SamplingConfig
 from .errors import NotYetImplementedError, UnsupportedInputError
 from .render import axes as _axes
 from .render import plotly_backend
-from .render.options import RenderOptions
+from .render.options import (
+    RenderOptions,
+    _positive_pixels,
+    get_plot_size,
+    set_plot_size,
+)
 from .result import PlotResult, get_range_controls, set_range_controls
 from .ui import interact
 from .ui.adapters import detect_frontend, frontend_report
@@ -42,6 +47,8 @@ __all__ = [
     "get_verbose",
     "set_range_controls",
     "get_range_controls",
+    "set_plot_size",
+    "get_plot_size",
     "detect_frontend",
     "frontend_report",
 ]
@@ -72,9 +79,12 @@ def plot(
     exclusions: Sequence[float] | bool | None = None,
     mesh: bool | int = True,
     ticks: bool | int | None = None,
+    width: int | None = None,
+    height: int | None = None,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
     zlim: tuple[float, float] | None = None,
+    controls: bool | None = None,
     verbose: bool | None = None,
     parameters: Mapping[sp.Symbol, float] | Sequence[sp.Symbol] = (),
 ) -> PlotResult:
@@ -94,7 +104,8 @@ def plot(
     """
     options = _render_options(
         title=title, yscale=yscale, show_legend=show_legend, kind=kind,
-        mesh=mesh, ticks=ticks, xlim=xlim, ylim=ylim, zlim=zlim,
+        mesh=mesh, ticks=ticks, width=width, height=height,
+        xlim=xlim, ylim=ylim, zlim=zlim,
     )
     config = _sampling_config(points, exclusions)
 
@@ -127,7 +138,7 @@ def plot(
         )
 
     figure = plotly_backend.figure_from_plan(plan, options)
-    result = PlotResult(plan, figure, options)
+    result = PlotResult(plan, figure, options, controls=controls)
 
     if _VERBOSE if verbose is None else verbose:
         safe_print(result.summary())
@@ -144,6 +155,8 @@ def _render_options(
     kind: str | None = None,
     mesh: bool | int = True,
     ticks: bool | int | None = None,
+    width: int | None = None,
+    height: int | None = None,
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] | None = None,
     zlim: tuple[float, float] | None = None,
@@ -167,6 +180,8 @@ def _render_options(
         kind=kind,
         mesh=_mesh_option(mesh),
         ticks=_ticks_option(ticks),
+        width=None if width is None else _positive_pixels(width, "width"),
+        height=None if height is None else _positive_pixels(height, "height"),
         xlim=_view_limit(xlim, "xlim"),
         ylim=_view_limit(ylim, "ylim"),
         zlim=_view_limit(zlim, "zlim"),
@@ -436,6 +451,18 @@ _PLAN_KEYWORDS: frozenset[str] = (
     frozenset(inspect.signature(build_plan).parameters)
     - {"obj", "ranges", "config"}
 ) | _SAMPLING_KEYWORDS
+#: Keywords that decide what a *notebook cell shows*, rather than what is
+#: sampled or how the figure is drawn — so they reach neither `build_plan` nor
+#: `_render_options`, and are not derivable from either signature.
+#:
+#: `animate()` does not take these, and that is the honest answer rather than a
+#: gap: a slider-driven figure never displays the range-control sidebar (its
+#: positions are pre-rendered frames, so there is nothing live to resample), and
+#: accepting `controls=` there would be an option that ignores the value it was
+#: given — which this module treats as a bug everywhere else. Named here so the
+#: coverage test can tell "deliberately display-only" from "forgotten", and so
+#: that a second such keyword has to be declared rather than silently slip past.
+_DISPLAY_KEYWORDS: frozenset[str] = frozenset({"controls"})
 
 
 def _animate_keywords(

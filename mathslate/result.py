@@ -77,9 +77,16 @@ def _rebuild_plot_result(
     options: RenderOptions,
     frames: tuple[list[PlotPlan], tuple[float, ...], str] | None,
     frame_play: bool,
+    controls: bool | None = None,
 ) -> "PlotResult":
-    """Reconstruct a pickled :class:`PlotResult`. See its ``__reduce__``."""
-    return PlotResult(plan, go.Figure(figure_spec), options, frames, frame_play)
+    """Reconstruct a pickled :class:`PlotResult`. See its ``__reduce__``.
+
+    ``controls`` is last and defaults, so a result pickled by an older version
+    — the AI subprocess boundary sends these across (§25) — still unpickles.
+    """
+    return PlotResult(
+        plan, go.Figure(figure_spec), options, frames, frame_play, controls
+    )
 
 
 
@@ -93,11 +100,18 @@ class PlotResult:
         options: RenderOptions | None = None,
         frames: tuple[list[PlotPlan], tuple[float, ...], str] | None = None,
         frame_play: bool = False,
+        controls: bool | None = None,
     ) -> None:
         self._plan: PlotPlan = plan
         self._figure: go.Figure = figure
         #: The drawing options, so ``python()`` emits the figure you are seeing.
         self._options: RenderOptions = options or RenderOptions()
+        #: Whether this plot shows the range-control sidebar, or ``None`` to
+        #: follow ``set_range_controls()``. Not a ``RenderOptions`` field: that
+        #: module holds what *both renderers* read, and neither renderer draws
+        #: a sidebar — this decides what a notebook cell displays, and has no
+        #: bearing on the figure or on the program ``show_python()`` emits.
+        self._controls: bool | None = controls
         #: ``(one plan per slider position, the positions, the label)`` when a
         #: slider is driving this figure. ``show_python()`` needs all three, or
         #: it would emit a still picture for something that moves.
@@ -140,6 +154,7 @@ class PlotResult:
                 self._options,
                 self._frames,
                 self._frame_play,
+                self._controls,
             ),
         )
 
@@ -388,7 +403,7 @@ class PlotResult:
         kind = plan.kind if plan.kind in REQUESTABLE_KINDS else None
         new_plan = build_plan(obj, *ranges, polar=plan.polar, kind=kind, config=plan.config)
         figure = plotly_backend.figure_from_plan(new_plan, options)
-        return PlotResult(new_plan, figure, options)
+        return PlotResult(new_plan, figure, options, controls=self._controls)
 
     def _resamplable(self) -> bool:
         """Whether this plot has a symbolic domain :meth:`range_controls` can move."""
@@ -457,8 +472,13 @@ class PlotResult:
 
     def _wants_live_range_controls(self) -> bool:
         """Whether a bare ``plot(...)`` should show :meth:`range_controls` (§19.4)."""
-        return (
+        wanted = (
             range_controls_widget.get_range_controls()
+            if self._controls is None
+            else self._controls
+        )
+        return (
+            wanted
             and self._resamplable()
             and not self.interactive
             and detect_frontend() in (Frontend.JUPYTER, Frontend.COLAB)

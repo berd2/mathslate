@@ -2357,3 +2357,75 @@ breaks compare equal), overlaid, parametric, polar, surface with its 2-D
 `tests/test_api_surface.py::TestTheEscapeHatchesSurvivePickling` pins it;
 two of its five fail against the unfixed code and the other three guard the
 parts that were already right.
+
+## 26. Figure height, size control, and turning the sidebar off
+
+A Jupyter user's report, and all three parts of it are about the same thing:
+how much of a notebook cell the graph gets.
+
+### 26.1 The default height
+
+Nothing set a height, so every figure was Plotly's own 450px. That number is
+chosen for a dashboard tile — one panel among several. A notebook cell is the
+full width of the page and the graph is the thing being read, and since §19.4
+a fifth of that width goes to the range-control sidebar. 450 left the curve in
+a letterbox.
+
+`DEFAULT_HEIGHT = 540` — that default times 1.2, enough to stop the squeeze
+without pushing the report line under the fold on a laptop screen.
+
+Applied at `figure_from_plan`'s gate rather than inside each of the six figure
+builders, and emitted at `generate_code`'s, because "how tall is a plot" has
+no per-kind answer and six copies of one answer is six chances for a seventh
+builder to forget it. `REPRODUCED` gains `figure width/height`: a figure and
+the program `show_python()` says builds it must not come out different sizes.
+
+### 26.2 `width` / `height` / `set_plot_size()`
+
+Per call, and notebook-wide, in the shape §21.1 already established for
+`set_range_controls()` — a standing preference stated once at the top should
+not have to be repeated per cell, and a call still wins over it.
+
+**Width stays unset by default**, and that is the substantive decision here.
+Plotly reads an unset width as "measure the container", which is what makes a
+figure fill its cell; a pixel width leaves a gap beside it on a wide screen and
+clips it on a narrow one — the trap §23.1 had already fallen into with the
+sidebar split, and re-introducing it as a default would have undone that fix.
+
+Two of the three remaining slots §20 left: `NEW_API` goes from 17 to 19. That
+is one short of the cap, and the next round has to argue for its symbol rather
+than assume it.
+
+### 26.3 `controls=` — the per-plot sidebar switch
+
+§21.1 reasoned that a *global* toggle was the right shape because the standing
+preference is what a reader has, and `.range_controls()` by name covers the
+other direction. The report shows the missing case: the sidebar earns its fifth
+of the width on a curve being explored and not on one being looked at, which is
+a per-plot judgement, and `set_range_controls(False)` is too blunt for it while
+calling `.range_controls()` on every *other* plot is too tedious.
+
+`controls=None|True|False` on `plot()`, resolved against the global rather than
+replacing it. It is **not** a `RenderOptions` field: that module holds what both
+renderers read, and neither renderer draws a sidebar. It decides what a notebook
+cell displays, changes nothing about the figure, and is absent from the emitted
+program — where a plot is shown is not part of what it is.
+
+That makes it the first *display-only* keyword, so `_DISPLAY_KEYWORDS` names it
+and the `animate()` keyword-coverage test reads that set. `animate()` does not
+take it, and refuses it rather than ignoring it: a slider-driven figure never
+shows the sidebar (its positions are pre-rendered frames), so accepting it there
+would be an option that ignores the value it was given.
+
+### 26.4 What the existing tests caught
+
+Two regressions, both from tests written for earlier rounds:
+
+* `range_controls(width=, height=)` stopped surviving a redraw. `_apply()`
+  replaces the whole layout with the fresh figure's, and the fresh figure now
+  carries a height — so a size that lived only on the widget was overwritten the
+  first time a box was edited. The size is folded into `controller_options`
+  instead, which every rebuild already carries.
+* `plot()`'s keyword-coverage test failed on `controls`, which is the test doing
+  its job: the exemption is now declared in `_DISPLAY_KEYWORDS` rather than the
+  assertion being loosened.

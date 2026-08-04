@@ -35,6 +35,36 @@ MAX_LITERAL_POINTS: int = 2000
 def generate_code(plan: PlotPlan, options: RenderOptions | None = None) -> str:
     """Return runnable Python equivalent to ``plan`` drawn with ``options``."""
     options = options or RenderOptions()
+    return _sized(_source_for(plan, options), options)
+
+
+def _sized(source: str, options: RenderOptions) -> str:
+    """Add the figure's pixel size, just before it is shown.
+
+    At this gate rather than inside each of the nine emitters, for the same
+    reason `plotly_backend._apply_size` sits at `figure_from_plan`'s: the size
+    has no per-kind answer, and nine copies of one answer is nine chances to
+    add a tenth emitter that forgets it. Every emitted program ends by showing
+    `fig`, so there is exactly one place this can go.
+    """
+    width, height = options.figure_size()
+    setting = ", ".join(
+        f"{name}={int(value)}"
+        for name, value in (("width", width), ("height", height))
+        if value is not None
+    )
+    if not setting:
+        return source
+    lines = source.splitlines()
+    for index in range(len(lines) - 1, -1, -1):
+        if lines[index].strip() == "fig.show()":
+            lines.insert(index, f"fig.update_layout({setting})")
+            break
+    return "\n".join(lines) + "\n"
+
+
+def _source_for(plan: PlotPlan, options: RenderOptions) -> str:
+    """Dispatch to the emitter for this plan's kind."""
     if plan.two_variable:
         return _two_variable_code(plan, options)
     if plan.kind == "space":

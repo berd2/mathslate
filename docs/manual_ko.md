@@ -101,7 +101,7 @@ from mathslate import (
 
 ## 2. 공개 API 표면
 
-MathSlate는 20개의 예산(PRD §20) 중 **15개의 공개 이름**을 도입합니다. 그 외에 노출되는 모든 것은 변경 없이 다시 내보내진(re-exported) SymPy입니다.
+MathSlate는 20개의 예산(PRD §20) 중 **19개의 공개 이름**을 도입합니다. 그 외에 노출되는 모든 것은 변경 없이 다시 내보내진(re-exported) SymPy입니다.
 
 ### MathSlate에서 새로 도입된 기능
 
@@ -122,6 +122,7 @@ MathSlate는 20개의 예산(PRD §20) 중 **15개의 공개 이름**을 도입�
 | `dataset()` | v1.0 | 기호와 데이터를 연결하는 다리 — §13 |
 | `Dataset` | v1.0 | `dataset()`이 반환하는 타입 — §13 |
 | `set_range_controls()` / `get_range_controls()` | v1.5 | 기본 `plot()`이 `range_controls()`를 보여줄지 여부 — §4.13, §21 |
+| `set_plot_size()` / `get_plot_size()` | v1.6 | 이후 모든 plot이 갖는 크기 — §4.12b |
 
 ```python
 import mathslate
@@ -299,7 +300,8 @@ print(plot(2.5).plan.kind)
 ```text
 plot(obj, *ranges, polar=False, kind=None, label=None, title=None,
      yscale=None, show_legend=None, points=None, exclusions=None,
-     mesh=True, ticks=None, xlim=None, ylim=None, zlim=None,
+     mesh=True, ticks=None, width=None, height=None,
+     xlim=None, ylim=None, zlim=None, controls=None,
      verbose=None, parameters=()) -> PlotResult
 ```
 
@@ -639,6 +641,50 @@ plot(sin(x), ticks=2)
 
 2D에서는 쓸 일이 드뭅니다: 확대·축소하면 스스로 다시 라벨을 붙입니다(§4.13).
 
+### 4.12b `width`와 `height` — 그림의 크기
+
+따로 지정하지 않으면 plot의 높이는 `DEFAULT_HEIGHT`(540px)입니다. Plotly 자체 기본값은 450인데, 이는 대시보드 타일의 높이입니다. 노트북 셀은 페이지 전체 너비이고 그래프는 여러 패널 중 하나가 아니라 읽으려는 대상 그 자체이며, §4.13의 사이드바가 너비의 5분의 1을 가져가고 나면 450은 우편함 투입구처럼 읽힙니다.
+
+```python
+from mathslate.render.options import DEFAULT_HEIGHT
+print(plot(sin(x), verbose=False).plotly.layout.height == DEFAULT_HEIGHT)  # True
+print(plot(sin(x), height=800, verbose=False).plotly.layout.height)        # 800
+```
+
+**너비는 기본적으로 일부러 지정하지 않습니다.** Plotly는 지정되지 않은 너비를 "컨테이너를 측정하라"는 뜻으로 읽으며, 그래서 그림이 셀을 가득 채웁니다. 픽셀 너비를 주면 넓은 화면에서는 옆에 빈 공간이 생기고 좁은 화면에서는 잘립니다. 고정 크기를 정말로 원할 때만 지정하세요:
+
+```python
+print(plot(sin(x), verbose=False).plotly.layout.width)                 # None
+print(plot(sin(x), width=1000, verbose=False).plotly.layout.width)     # 1000
+```
+
+`set_plot_size()`는 이후 모든 plot의 기본값을 바꿉니다. 매 셀마다 쓰는 대신 노트북 맨 위에서 한 번 쓰고 싶을 때 이쪽을 씁니다. 한쪽 차원만 지정하면 다른 쪽은 그대로 두며, `reset=True`는 둘 다 되돌립니다:
+
+```python
+from mathslate import set_plot_size, get_plot_size
+
+set_plot_size(height=720)
+print(plot(sin(x), verbose=False).plotly.layout.height)         # 720
+print(plot(sin(x), height=300, verbose=False).plotly.layout.height)  # 300 — 개별 호출이 우선
+set_plot_size(reset=True)
+print(get_plot_size())                                          # (None, 540)
+```
+
+둘 다 `show_python()`으로 재현됩니다. 그림과 그것을 만든다고 하는 프로그램의 크기가 서로 달라서는 안 되기 때문입니다.
+
+### 4.12c `controls` — 특정 plot에서만 사이드바 끄기
+
+범위 조절 사이드바(§4.13)는 탐색 중인 곡선에서는 너비의 5분의 1만큼의 값어치를 하지만, 그냥 보기만 하는 곡선에서는 그렇지 않습니다. `controls=False`는 이 plot에 대해 원래의 순수한 그림을 돌려주고, `controls=True`는 `set_range_controls(False)`로 노트북 전체에서 꺼놓았더라도 이 plot에서만 요청합니다.
+
+```text
+plot(sin(x), controls=False)     # 셀 너비 전체가 그래프
+plot(sin(x))                     # 그림 + 사이드바, 기본값
+```
+
+이것은 *기본 표시 방식*을 사양하는 것이지 메서드를 없애는 것이 아닙니다. `.range_controls()`를 직접 호출하면 위젯은 여전히 만들어집니다. 그리고 그림 자체는 전혀 바뀌지 않으므로 `show_python()`은 어느 쪽이든 같은 프로그램을 내보냅니다 — plot이 *어디에* 표시되는지는 그 plot이 *무엇인지*의 일부가 아닙니다.
+
+노트북 전체에 적용하고 싶으면 `set_range_controls(False)`를, 개별 plot에서 그것을 뒤집으려면 `controls=`를 쓰세요.
+
 ### 4.13 라이브 범위 컨트롤 — 그림을 그린 뒤에도 창을 움직이기
 
 `xlim`/`ylim`은 창을 한 번 정할 뿐이고, Plotly 자체의 드래그 확대는 이미 계산된 점들을 잘라 보여줄 뿐입니다 — 넓은 정의역의 10분의 1로 확대해도 원래 점 밀도의 10분의 1을 볼 뿐, 더 자세히 보이는 게 아닙니다. `range_controls()`는 대신 다시 샘플링합니다: X나 Y를 움직이면 새 창으로 `plot()`을 다시 호출하므로, 좁힐수록 원래 해상도 그대로 그려집니다.
@@ -666,6 +712,8 @@ result.range_controls(width=800, height=500)
 지정하지 않으면 이미 설정된 크기를 그대로 유지하거나, 없으면 입력창 사이드바가 전체 너비의 약 5분의 1을 차지하도록 기본값이 적용됩니다. 이 분할은 (고정 픽셀이 아니라) 퍼센트 기준이라 그림과 사이드바를 합치면 항상 노트북의 실제 너비 전체를 채웁니다. 드래그로 조절 가능한 구분선은 아닙니다 — 그림과 사이드바 사이에 드래그 핸들은 없고, 크기를 바꾸려면 `range_controls()`를 새 값으로 다시 호출하면 됩니다.
 
 곡면·등고선·영역은 두 축 모두 재샘플링되고, 일반 곡선은 Y가 X에서 유도되는 값이라 X만 재샘플링되고 Y는 `ylim` 뷰 조정으로 대체됩니다 — 애초에 값이 샘플링되지 않은 축에서 되찾을 해상도는 없기 때문입니다. 진짜 3D 곡면(`surface`/`psurface`, 평면인 `contour`/`region`은 제외)에는 `z min`/`z max` 입력창 2개가 더 생깁니다 — Z는 곡면의 *결과값*이지 정의역이 아니므로, 움직여도 `zlim`만 다시 적용될 뿐입니다 — 재샘플링 없이, 일반 곡선의 Y와 마찬가지로 저렴하게.
+
+사이드바 자체가 필요 없으면 `controls=False`(§4.12c)로 이 plot에서만, `set_range_controls(False)`로 노트북 전체에서 끌 수 있습니다.
 
 정의역 기호가 가로축이 아닌 경우 — x와 y가 모두 하나의 매개변수의 결과값인 매개변수 곡선, 극곡선, 3D 공간곡선 — 첫 행은 `x`가 아니라 그 매개변수의 이름(예: `t`)으로 표시됩니다. 이 값을 움직이면 곡선을 더 많이 또는 더 적게 그리는 것이지, 화면을 자르는 것이 아닙니다. 공간곡선은 Z 컨트롤도 함께 제공합니다.
 
