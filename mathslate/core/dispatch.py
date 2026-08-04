@@ -375,7 +375,11 @@ def _wants_surface(
         return False
     if kind in {"surface", "contour"}:
         return True
-    fixed = set(parameters) | set(binding.bound_parameters())
+    # By name, not by symbol: a bound `a` fixes this expression's `a` however
+    # either was spelled, and a set difference over symbol objects misses that
+    # whenever the assumptions differ (see `binding._BOUND`).
+    bound = binding.bound_names()
+    fixed = set(parameters) | {s for s in expr.free_symbols if s.name in bound}
     free = expr.free_symbols - fixed - {s[0] for s in specs}
     # Axis candidates are the still-free symbols plus every symbol given a
     # range. Two of them is a surface, however they were arrived at: two ranges
@@ -408,10 +412,13 @@ def _apply_parameters(
     """
     axes = {spec[0] for spec in specs}
     free = {s for expr in exprs for s in expr.free_symbols}
+    # Keyed by the *expression's* symbols, so `expr.subs` below matches them.
+    named_axes = {s.name for s in axes}
+    named_values = {s.name for s in values}
     automatic = {
         symbol: value
-        for symbol, value in binding.bound_parameters().items()
-        if symbol in free and symbol not in axes and symbol not in values
+        for symbol, value in binding.bindings_for(free).items()
+        if symbol.name not in named_axes and symbol.name not in named_values
     }
     _reject_axis_eating_sliders(automatic, values, free, axes, axes_needed)
     values = {**automatic, **values}

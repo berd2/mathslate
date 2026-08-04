@@ -28,6 +28,8 @@ __all__ = [
     "bind_parameter",
     "unbind_parameter",
     "bound_parameters",
+    "bound_names",
+    "bindings_for",
     "default_range",
     "parse_range",
 ]
@@ -106,26 +108,61 @@ def choose_symbols(
 # rule 2: symbols bound by slider() and friends
 # --------------------------------------------------------------------------
 
-#: ``symbol -> current value`` for every symbol some UI control has bound.
-#: The registry lives here, in ``core``, because this *is* binding (PRD 5.2
-#: rule 2). It holds plain floats and knows nothing about widgets, so ``core``
-#: stays independent of the frontend as PRD 6.1 requires; ``ui/interact.py``
-#: is what puts entries in it.
-_BOUND: dict[sp.Symbol, float] = {}
+#: ``name -> (symbol, current value)`` for every symbol some UI control has
+#: bound. The registry lives here, in ``core``, because this *is* binding (PRD
+#: 5.2 rule 2). It holds plain floats and knows nothing about widgets, so
+#: ``core`` stays independent of the frontend as PRD 6.1 requires;
+#: ``ui/interact.py`` is what puts entries in it.
+#:
+#: Keyed by *name* rather than by the symbol object, because SymPy symbol
+#: identity includes assumptions and rule 2 does not. ``slider(name="a")``
+#: binds ``Symbol('a', real=True)``; a reader who wrote ``a = sp.Symbol('a')``
+#: has a different, unequal, identically-printing object, and a symbol-keyed
+#: registry answered "not bound" for it — so ``plot(sin(a*x))`` quietly treated
+#: the slider's own parameter as a second axis instead of raising or using the
+#: slider's value. Two entries could also sit in here at once, both displaying
+#: as ``a``, with no way for a reader to tell them apart.
+_BOUND: dict[str, tuple[sp.Symbol, float]] = {}
 
 
 def bind_parameter(symbol: sp.Symbol, value: float) -> None:
     """Record ``symbol`` as a parameter sitting at ``value``."""
-    _BOUND[symbol] = float(value)
+    _BOUND[symbol.name] = (symbol, float(value))
 
 
 def unbind_parameter(symbol: sp.Symbol) -> None:
-    _BOUND.pop(symbol, None)
+    _BOUND.pop(symbol.name, None)
 
 
 def bound_parameters() -> dict[sp.Symbol, float]:
-    """Every currently bound symbol. A copy: callers must not mutate ours."""
-    return dict(_BOUND)
+    """Every currently bound symbol. A copy: callers must not mutate ours.
+
+    Keyed by the symbol each binding was *made* with. Callers holding
+    expressions of their own want :func:`bindings_for` instead, which answers
+    in their symbols rather than in these.
+    """
+    return {symbol: value for symbol, value in _BOUND.values()}
+
+
+def bound_names() -> set[str]:
+    """The names currently bound, for a caller that only needs to test one."""
+    return set(_BOUND)
+
+
+def bindings_for(symbols: Iterable[sp.Symbol]) -> dict[sp.Symbol, float]:
+    """The bound value of each of ``symbols``, keyed by *that* symbol object.
+
+    Matching is by name (see :data:`_BOUND`), but the answer is keyed by the
+    caller's own symbol, which is what lets ``expr.subs(...)`` actually replace
+    anything: substituting the slider's ``Symbol('a', real=True)`` into an
+    expression built from a plain ``Symbol('a')`` matches nothing and leaves the
+    parameter standing.
+    """
+    return {
+        symbol: _BOUND[symbol.name][1]
+        for symbol in symbols
+        if symbol.name in _BOUND
+    }
 
 
 def check_ranges(exprs: Sequence[sp.Expr], explicit: Sequence[RangeSpec]) -> None:

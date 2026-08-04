@@ -44,6 +44,63 @@ __all__ = [
 
 _FENCE = re.compile(r"```(?:python)?\n(?P<body>.*?)```", re.DOTALL)
 
+#: What replaces a credential on its way into an error message.
+_HIDDEN: str = "[hidden]"
+
+#: The shortest run of a key still worth masking. Below this a "prefix" is
+#: `sk-a` — shared by every key the vendor ever issued, so hiding it protects
+#: nothing and only mangles ordinary error prose.
+_MIN_SECRET_RUN: int = 8
+
+#: Key shapes a provider may echo even when we hold no copy to match against —
+#: a key read from the environment by the vendor SDK itself, or the second key
+#: in a message about the first. Matched by shape rather than by value, because
+#: the point is to fail closed on the credential we were never given.
+_SECRET_SHAPES = re.compile(
+    r"sk-[A-Za-z0-9_\-]{4,}"       # OpenAI, Anthropic
+    r"|AIza[A-Za-z0-9_\-]{10,}"    # Google
+    r"|gsk_[A-Za-z0-9_\-]{10,}"    # Groq
+    r"|\b[A-Fa-f0-9]{32,}\b"       # a bare hex secret
+)
+
+
+def _redacted(text: str, key: str | None) -> str:
+    """Provider text with anything credential-shaped taken out of it.
+
+    A plain ``text.replace(key, ...)`` is not enough, because a provider
+    rejecting a key rarely quotes it whole: the usual shape is a head and a
+    tail around an ellipsis — ``invalid x-api-key sk-ant-api03...7890`` — which
+    the whole-key replacement walks straight past. So known-key *runs* are
+    masked from the longest down, and then anything merely key-shaped, which
+    also covers a key the SDK read from the environment and we never held.
+    """
+    if key:
+        for size in range(len(key), _MIN_SECRET_RUN - 1, -1):
+            text = text.replace(key[:size], _HIDDEN).replace(key[-size:], _HIDDEN)
+    return _SECRET_SHAPES.sub(_HIDDEN, text)
+
+
+def _provider_failed(
+    exc: Exception, provider_name: str, key: str | None, doing: str
+) -> UnsupportedInputError:
+    """The error raised when a provider call fails, with no credential in it.
+
+    Deliberately *not* chained with ``raise ... from exc``. Masking the text of
+    the new message is pointless while the old one is still attached: Python
+    prints the whole chain, so the original — the exception that actually
+    quoted the key — is re-printed verbatim under "The above exception was the
+    direct cause of the following exception". The type name and the redacted
+    detail below carry everything the chain would have said that is safe to
+    say, and both call sites go through here so neither can regain the leak.
+    """
+    detail = _redacted(str(exc).strip(), key)
+    return UnsupportedInputError(
+        f"{provider_name.title()} did not complete {doing} "
+        f"({type(exc).__name__}: {detail or 'no detail'}). "
+        "Check the API key, model access, quota, and network, then retry."
+    )
+
+
 #: Set by :func:`configure`; ``ask()`` falls back to auto-detection.
 _DEFAULTS: dict[str, Any] = {
     "provider": None,
@@ -820,15 +877,13 @@ def _complete(
 
     try:
         reply = backend.complete(system, question, model_name)
-    except Exception as exc:
-        detail = str(exc).strip()
-        if effective_key:
-            detail = detail.replace(effective_key, "[hidden]")
-        raise UnsupportedInputError(
-            f"{chosen.name.title()} did not complete the request "
-            f"({type(exc).__name__}: {detail or 'no detail'}). "
-            "Check the API key, model access, quota, and network, then retry."
-        ) from exc
+    # Blind on purpose: every provider SDK raises its own hierarchy, and a
+    # network stack under it raises anything at all. `from None` is what
+    # keeps the credential out of the chain — see `_provider_failed`.
+    except Exception as exc:  # noqa: BLE001
+        raise _provider_failed(
+            exc, chosen.name, effective_key, "the request"
+        ) from None
     if not reply or not reply.strip():
         raise UnsupportedInputError(
             f"provider {chosen.name!r} returned no text. Retry the request, "
@@ -968,15 +1023,13 @@ def check_connection(
             "Reply exactly OK.",
             model_name,
         )
-    except Exception as exc:
-        detail = str(exc).strip()
-        if effective_key:
-            detail = detail.replace(effective_key, "[hidden]")
-        raise UnsupportedInputError(
-            f"{chosen.name.title()} did not complete the connection check "
-            f"({type(exc).__name__}: {detail or 'no detail'}). "
-            "Check the API key, model access, quota, and network, then retry."
-        ) from exc
+    # Blind on purpose: every provider SDK raises its own hierarchy, and a
+    # network stack under it raises anything at all. `from None` is what
+    # keeps the credential out of the chain — see `_provider_failed`.
+    except Exception as exc:  # noqa: BLE001
+        raise _provider_failed(
+            exc, chosen.name, effective_key, "the connection check"
+        ) from None
     if not reply or not reply.strip():
         raise UnsupportedInputError(
             f"provider {chosen.name!r} returned no text for the connection check. "

@@ -32,7 +32,7 @@ import plotly.graph_objects as go
 
 from ..core.sampling import DEFAULT_CONFIG
 from ..core.surfaces import GRID as DEFAULT_GRID
-from ..errors import MathSlateError, UnsupportedInputError
+from ..errors import MathSlateError, SamplingError, UnsupportedInputError
 from ..render import axes, plotly_backend
 from ..render.options import DEFAULT_MESH_LINES
 from .adapters import Frontend, detect_frontend
@@ -70,6 +70,53 @@ _RANGE_CONTROLS_COMPACT_CLASS: str = "mathslate-range-controls-compact"
 #: count". A slider needs a number there and 2 is below `ticks=`'s own floor of
 #: 3, so it cannot be mistaken for a cap the reader actually asked for.
 _AUTO_TICKS: int = 2
+
+#: Failures a redraw is *expected* to hit, and may swallow without a word.
+#:
+#: All three mean "not at this value" — the reader is part-way through typing a
+#: window and the number in the box right now is one the expression cannot be
+#: sampled over. The next keystroke fixes it, so saying anything would be noise
+#: attached to a transient state the reader is already leaving.
+_REDRAW_TRANSIENT: tuple[type[BaseException], ...] = (
+    SamplingError,
+    ValueError,
+    OverflowError,
+)
+
+#: Redraw failures already reported, so a held-down arrow key cannot turn one
+#: defect into a hundred warnings. Keyed by message, because that is what
+#: distinguishes two different faults in the same session.
+_REPORTED_REDRAW_FAILURES: set[str] = set()
+
+
+def _report_redraw_failure(error: MathSlateError) -> None:
+    """Say that a redraw failed structurally, once, and keep the sidebar alive.
+
+    Everything outside :data:`_REDRAW_TRANSIENT` says the *plan* cannot be
+    rebuilt — not that this particular window is unsamplable. No keystroke
+    fixes that, so a silent `return` leaves every control on the plot dead with
+    nothing anywhere to say why.
+
+    That is not hypothetical: it is what this handler did. ``_replotted()``
+    raised ``UnsupportedInputError("unknown kind='parametric'")`` for six of the
+    ten plot families, the bare ``except`` swallowed it, and the sidebar shipped
+    inert on all six with zero errors raised and zero output produced. The bug
+    was found by a reader trying the controls in the tour, not by anything here.
+
+    So the swallow stays — a traceback out of a widget callback helps nobody,
+    and a half-working sidebar beats a broken cell — but it stops being silent.
+    """
+    message = str(error)
+    if message in _REPORTED_REDRAW_FAILURES:
+        return
+    _REPORTED_REDRAW_FAILURES.add(message)
+    warnings.warn(
+        f"a range-control redraw failed and the sidebar is not tracking the "
+        f"figure: {type(error).__name__}: {message}. This is a MathSlate bug "
+        f"rather than something to fix in your call — please report it.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
 
 
 def set_range_controls(value: bool) -> None:
@@ -660,8 +707,11 @@ def build(
                 render_options=controller_options,
                 config=controller_config,
             )
-        except (MathSlateError, ValueError, OverflowError):
+        except _REDRAW_TRANSIENT:
             return  # e.g. a range too narrow for this expression to sample
+        except MathSlateError as error:
+            _report_redraw_failure(error)
+            return
         controller_options = fresh._options
         _apply(fresh)
 

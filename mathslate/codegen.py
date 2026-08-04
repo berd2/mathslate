@@ -213,12 +213,49 @@ def _segments_source(series: Series, fallback: tuple[float, float]) -> list[tupl
     return intervals or [fallback]
 
 
+#: Significant digits kept when a value is written into the emitted program.
+#: Twelve, because that is what the tidying this replaced was reaching for —
+#: enough to swallow the `0.30000000000000004` that linspace arithmetic leaves
+#: behind, short of the ~17 a double actually carries.
+_SOURCE_DIGITS: int = 12
+
+#: Above this, ".1f" stops being the readable spelling of a whole number: a
+#: float that large is an integer anyway, and `1e+20` reads better than the
+#: twenty-two characters `100000000000000000000.0`.
+_PLAIN_INTEGER_LIMIT: float = 1e16
+
+
 def _fmt(value: float) -> str:
+    """One float as Python source — tidied, but never falsified.
+
+    Both rules here are *relative*, because an absolute tolerance is only ever
+    right at one scale. The previous pair were absolute and wrong away from it:
+    ``abs(value - round(value)) < 1e-12`` called every value below 5e-13 a
+    whole number, and ``round(value, 12)`` — twelve *decimal places*, not
+    twelve digits — flattened whatever survived that. Together they turned any
+    magnitude under about 5e-13 into ``0.0``, so
+
+        plot(sin(x / 1e-13), (x, 0, 5e-13)).show_python()
+
+    emitted ``pieces = [(0.0, 0.0)]`` and ``range=[0.0, 0.0]``: a program that
+    draws nothing, printed under a promise that it runs exactly as the figure
+    beside it did. Scaling both tolerances to the value's own magnitude keeps
+    the tidying at unit scale — which is all it was ever asked for — and stops
+    it reaching values it has no business rounding.
+    """
     if not np.isfinite(value):
         return "np.nan"
-    if abs(value - round(value)) < 1e-12:
+    magnitude = abs(value)
+    # Scaled by the value's own magnitude and nothing else: a `max(magnitude,
+    # 1.0)` floor would look relative and behave absolutely below 1, which is
+    # the whole of the bug this rule replaced. At zero the tolerance is zero
+    # too, and exact zero still passes because its distance to `round` is zero.
+    if (
+        magnitude < _PLAIN_INTEGER_LIMIT
+        and abs(value - round(value)) <= 1e-12 * magnitude
+    ):
         return f"{value:.1f}"
-    return repr(round(float(value), 12))
+    return f"{value:.{_SOURCE_DIGITS}g}"
 
 
 def _fmt_list(values: Sequence[float]) -> str:

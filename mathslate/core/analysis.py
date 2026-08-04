@@ -651,19 +651,50 @@ def _solve_exactly(
         ordered = sorted(solution.args, key=lambda e: _to_float(e) or 0.0)
         inside = [e for e in ordered if (f := _to_float(e)) is not None and lo <= f <= hi]
         if len(inside) == len(values):
-            # A FiniteSet from `solveset` already holds the *exact* roots
-            # (`-159*pi/500`, `sqrt(2)`), so `nsimplify` is only for the rare
-            # element that came back as a Float and needs an exact form guessed.
-            # Running it on an already-exact expression is both the slow path —
-            # `sin(1000*x)` has ~640 roots and `nsimplify` on each summed to tens
-            # of seconds across roots/extrema/inflections — and a *wrong* one:
-            # `nsimplify` re-derives from the float and can return a different
-            # closed form that merely approximates it, turning `-57*pi/200` into
-            # a spurious product of prime powers. Touch only the Float elements.
-            symbolic = tuple(
-                sp.nsimplify(e) if e.has(sp.Float) else e for e in inside
-            )
+            symbolic = tuple(_exact_form(e, equation, symbol) for e in inside)
     return values, symbolic
+
+
+def _exact_form(value: sp.Expr, equation: sp.Expr, symbol: sp.Symbol) -> sp.Expr:
+    """A closed form for one solution — but only one that really is equal to it.
+
+    A ``FiniteSet`` from ``solveset`` already holds exact solutions
+    (``-159*pi/500``, ``sqrt(2)``), so there is nothing to recover for most
+    elements and ``nsimplify`` must not be run on them: it is the slow path
+    (``sin(1000*x)`` has ~640 roots, and simplifying each summed to tens of
+    seconds across roots, extrema and inflections) and it re-derives from a
+    float, so it can hand back a *different* closed form that merely
+    approximates the one it was given.
+
+    The remaining case is an element that came back as a ``Float``, and there
+    ``nsimplify`` is not a simplification at all — it is a guess. Given
+    ``1.4142135623`` it answers ``sqrt(2)``, a number 7.3e-11 away, disagreeing
+    in digits the Float actually carried. Presenting that as the exact solution
+    is the one thing this module exists not to do: it is not a numeric answer
+    labelled approximate, it is a wrong answer labelled proven.
+
+    So a guess is kept only when it is *verified* — when putting it back into
+    the equation gives exactly zero. That test also settles the common case
+    correctly without any special reasoning: a Float in the solution set comes
+    from an equation that was itself written with Floats, and such an equation
+    has no exact solution beyond the decimal it was stated to, so no irrational
+    guess can ever verify and the Float is returned unchanged. Which is right —
+    for ``x - 1.4142135623`` the exact root *is* ``1.4142135623``.
+    """
+    if not value.has(sp.Float):
+        return value
+    guess = _attempt(sp.nsimplify, value)
+    if isinstance(guess, _NoResult) or guess.has(sp.Float):
+        return value
+    residual = equation.subs(symbol, guess)
+    verdict = residual.is_zero
+    if verdict is None:
+        # Undecided by structure alone, which is rare enough to be worth one
+        # `simplify` — and cheap to get wrong in the safe direction, since an
+        # unproven guess is discarded rather than reported.
+        simplified = _attempt(sp.simplify, residual)
+        verdict = not isinstance(simplified, _NoResult) and simplified == 0
+    return guess if verdict else value
 
 
 def _symmetry(
