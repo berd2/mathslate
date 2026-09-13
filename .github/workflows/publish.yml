@@ -19,21 +19,39 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev,jupyter,marimo]" nbclient nbformat ipykernel
-      - run: >-
-          python -m pytest -q
-          tests/test_acceptance.py
-          tests/test_ai_assistant.py
-          tests/test_ai_credentials.py
-          tests/test_ai_explain.py
-          tests/test_ai_followup.py
-          tests/test_ai_repair_and_fitting.py
-          tests/test_v1_data_and_ai.py
-          tests/test_figure_size.py
-          tests/test_view_and_mesh.py::TestSegmentControlsStayOnOneRow
+      # A release is rare enough to test the complete package, including
+      # notebook execution and documentation examples omitted from fast CI.
+      - run: python -m pytest -q
+
+  core_install:
+    name: Core install has no optional dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install the package exactly as a core user would
+        run: pip install .
+      - name: Confirm no AI or notebook extra was installed
+        run: |
+          python - <<'PY'
+          import importlib.util, sys
+          optional = (
+              "marimo", "ipywidgets", "notebook", "jupyter_core",
+              "anthropic", "openai", "google.genai", "keyring",
+          )
+          for package in optional:
+              if importlib.util.find_spec(package) is not None:
+                  sys.exit(f"{package} was installed by `pip install mathslate`")
+          import mathslate
+          mathslate.plot(mathslate.sin(mathslate.x), verbose=False)
+          print("clean core install, plot works:", mathslate.frontend_report())
+          PY
 
   build:
     name: Build distribution
-    needs: verify
+    needs: [verify, core_install]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

@@ -44,6 +44,13 @@ pip install "mathslate[jupyter]"   # ipywidgets + anywidget까지 함께 설치
 pip install "mathslate[marimo]"
 ```
 
+Jupyter Lab, 그래프 컨트롤, Gemini 보조 기능, API key의 안전한 로컬 저장까지
+한 번에 필요하다면 다음 extra를 사용하세요:
+
+```bash
+pip install "mathslate[starter]"
+```
+
 ### 2. Python이 낯설거나, 번거로운 설정을 피하고 싶은 경우
 
 명령 한 번이면 됩니다 — [uv](https://docs.astral.sh/uv/)가 없으면 먼저 설치하고, 가상환경을 만들고, mathslate를 설치하고, import가 이미 채워진 시작용 노트북을 만들어 Jupyter Lab으로 열어줍니다:
@@ -62,7 +69,7 @@ scripts\quickstart.ps1
 
 ```bash
 uv venv .venv-mathslate
-uv pip install --python .venv-mathslate "mathslate[jupyter]"   # ipywidgets + anywidget까지 함께 설치됨
+uv pip install --python .venv-mathslate ".[starter]"
 .venv-mathslate/bin/python -m jupyter lab
 ```
 
@@ -75,6 +82,9 @@ from mathslate import *
 ```
 
 이 import 하나가 **설정의 전부**입니다 — 이 문서에 나오는 `plot`, `analyze`, `sin`, `x` 등 모든 것이 여기서 나옵니다. `ipywidgets`/`anywidget`을 직접 import할 일은 없습니다 — mathslate가 `slider()` 내부에서 사용합니다.
+
+AI 보조 기능은 선택 사항입니다. 기본 `pip install mathslate`만으로도 API key,
+AI SDK, 네트워크 연결 없이 그래프, 분석, 표, 피팅, 내보내기 기능을 모두 사용할 수 있습니다.
 
 marimo를 쓰려면 extra를 `marimo`로, 마지막 줄을 `-m marimo edit`으로 바꾸면 됩니다.
 

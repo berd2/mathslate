@@ -10,8 +10,12 @@ dist/
 .ipynb_checkpoints/
 __marimo__/
 old_doc/
+old_docs/
+build_release_*/
 lite/files/
 lite/wheels/
 _site*/
 lite/.cache/
 lite/.jupyterlite.doit.db
+docs/code_review_and_risk_analysis.md
+mathslate_prd_0.3.md

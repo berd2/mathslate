@@ -59,6 +59,10 @@ pip install "mathslate[starter]"
 `anywidget`, `keyring`, and the Gemini SDK are installed by the extras; there
 is no need to find or install them one by one.
 
+The assistant is optional: `pip install mathslate` stays fully usable for
+plotting, analysis, tables, fitting and exports without an API key, an AI SDK,
+or a network connection.
+
 ### 2. New to Python, or you'd rather not fiddle
 
 From a checkout, after installing [uv](https://docs.astral.sh/uv/) once, one script creates an

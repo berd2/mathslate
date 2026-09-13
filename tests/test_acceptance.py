@@ -189,6 +189,11 @@ class TestCriterion6NoFrontendDependency:
             "jupyterlab", "ipykernel",
         ):
             assert package in starter
+        # Gemini is a convenience extra, not a core dependency.  Its current
+        # API needs the maintained v2 client, while a plain core install must
+        # remain independent of it.
+        gemini = " ".join(extras["ai-gemini"]).lower()
+        assert "google-genai>=2.0" in gemini
 
     def test_importing_mathslate_imports_no_frontend(self) -> None:
         """Checked in a clean interpreter.
