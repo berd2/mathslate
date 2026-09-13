@@ -42,12 +42,19 @@ on:
     - cron: "17 18 * * 0"
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # The event is part of the group, and the weekly run is never cancelled. A
+  # schedule runs on refs/heads/master, so with a shared group and
+  # cancel-in-progress a push landing on Monday morning cancelled the only full
+  # regression run outside a release.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   test:
     name: tests (Python 3.12, Ubuntu)
+    # `weekly_regression` runs the whole suite on a schedule; repeating the fast
+    # subsets beside it would only spend runner time on the same checks.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -72,6 +79,7 @@ jobs:
 
   documentation:
     name: docs and tour structure (Python 3.12, Ubuntu)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -125,6 +133,7 @@ jobs:
 
   core_install:
     name: core install has no optional dependencies
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

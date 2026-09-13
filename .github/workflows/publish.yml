@@ -21,7 +21,13 @@ jobs:
       - run: pip install -e ".[dev,jupyter,marimo]" nbclient nbformat ipykernel
       # A release is rare enough to test the complete package, including
       # notebook execution and documentation examples omitted from fast CI.
-      - run: python -m pytest -q
+      # The marimo HTML export of the tour is the one exception, as in the
+      # manual full matrix: that tour is maintained on its own, so a
+      # marimo-side change must not be able to block a library release. The
+      # weekly regression in ci.yml still runs it.
+      - run: >-
+          python -m pytest -q
+          --deselect tests/test_tour_notebooks.py::TestItRunsInMarimoToo
 
   core_install:
     name: Core install has no optional dependencies
