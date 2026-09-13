@@ -132,7 +132,10 @@ class SampleResult:
 
     @property
     def finite_count(self) -> int:
-        return int(np.count_nonzero(np.isfinite(self.x) & np.isfinite(self.y)))
+        finite = np.isfinite(self.x) & np.isfinite(self.y)
+        if self.z is not None:
+            finite &= np.isfinite(self.z)
+        return int(np.count_nonzero(finite))
 
 
 # --------------------------------------------------------------------------
@@ -812,11 +815,18 @@ def sample_parametric(
     info = describe_parametric_domain(parts, symbol, lo, hi)
     fx = NumericFunction(components[0], symbol)
     fy = NumericFunction(components[1], symbol)
+    fz = NumericFunction(third, symbol) if third is not None else None
 
     def evaluate(values: Array) -> tuple[Array, Array]:
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore", RuntimeWarning)
             return fx(values), fy(values)
+
+    def evaluate_z(values: Array) -> tuple[Array, Array]:
+        assert fz is not None
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore", RuntimeWarning)
+            return values, fz(values)
 
     if not info.intervals:
         raise SamplingError(
@@ -842,8 +852,19 @@ def sample_parametric(
         found = detect_jumps(
             evaluate, params, xs, ys, tuple(breakpoints), config, axes=(0, 1)
         )
-        breakpoints.extend(found)
-        cuts = found + [v for v in named if start < v < end]
+        z_found: list[float] = []
+        if fz is not None:
+            _, zs = evaluate_z(params)
+            z_found = detect_jumps(
+                evaluate_z,
+                params,
+                params,
+                zs,
+                tuple(breakpoints) + tuple(found),
+                config,
+            )
+        breakpoints.extend(found + z_found)
+        cuts = found + z_found + [v for v in named if start < v < end]
         params, xs, ys = _insert_breaks(
             evaluate, params, xs, ys, cuts, end - start, cut_x=True
         )
@@ -863,11 +884,19 @@ def sample_parametric(
         notes.append(f"singularities at {symbol.name} = {listed}")
 
     z: Array | None = None
-    if third is not None:
+    evaluated: list[NumericFunction] = [fx, fy]
+    if fz is not None:
+        # Named, not called inline. Its fallback verdict and note used to be
+        # discarded with it, so a space curve whose z needed the mpmath tier
+        # (`Si(t)`) reported itself as vectorised and never said it had slowed
+        # down — and `show_python()`, trusting that flag, printed a NumPy-only
+        # program that could not evaluate the component at all.
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore", RuntimeWarning)
-            z = NumericFunction(third, symbol)(params)
+            z = fz(params)
         z = np.where(np.isfinite(xs) & np.isfinite(ys), z, np.nan)
+        notes += list(fz.notes)
+        evaluated.append(fz)
 
     result = SampleResult(
         x=xs,
@@ -878,12 +907,12 @@ def sample_parametric(
         domain_intervals=info.intervals,
         y_range=_clip_range(params, ys, cuts, total_span, config, force=force),
         x_range=_clip_range(params, xs, cuts, total_span, config, force=force),
-        vectorized=fx.vectorized and fy.vectorized,
+        vectorized=all(function.vectorized for function in evaluated),
         notes=tuple(_unique(notes)),
     )
     if result.finite_count == 0:
         raise SamplingError("the parametric curve produced no finite points.")
-    _announce(fx, fy)
+    _announce(*evaluated)
     return result
 
 

@@ -17,6 +17,7 @@ from typing import Any, Callable
 import numpy as np
 import plotly.graph_objects as go
 import pytest
+from sympy import DiracDelta, Si, besselj
 
 from mathslate import (
     Abs, Eq, Matrix, cos, exp, floor, log, plot, polar, sin, slider, sqrt, t, tan, x, y, z,
@@ -64,6 +65,10 @@ CASES: tuple[tuple[str, Callable[[], Any]], ...] = (
     ("callable-scatter", lambda: plot(np.sin, (x, -3.0, 3.0), kind="scatter", verbose=False)),
     ("callable-log", lambda: plot(np.exp, (x, -3.0, 3.0), yscale="log", verbose=False)),
     ("callable-title", lambda: plot(np.sin, (x, -3.0, 3.0), title="mine", verbose=False)),
+    # NumPy has no besselj. The figure was drawn through the mpmath tier, and
+    # the program printed for it asked NumPy anyway and died with a NameError.
+    ("curve-special", lambda: plot(besselj(0, x), (x, 1.0, 10.0), verbose=False)),
+    ("parametric-special", lambda: plot((besselj(0, t), t), (t, 1.0, 10.0), verbose=False)),
 )
 IDS = [label for label, _ in CASES]
 
@@ -214,6 +219,21 @@ RICH_CASES: tuple[tuple[str, Callable[[], Any]], ...] = (
     ("region", lambda: plot(x**2 + y**2 < 1, verbose=False)),
     ("region-compound", lambda: plot((x**2 + y**2 < 4) & (y > x), verbose=False)),
     ("region-holes", lambda: plot(sqrt(x * y) > 1, verbose=False)),
+    # NumPy has no besselj or Si. Each of these was refused at runtime as having
+    # "no real values anywhere", and the program printed for it asked NumPy for
+    # the function regardless.
+    ("surface-special", lambda: plot(besselj(0, x * y), (x, 1.5, 6), (y, -3, 3), verbose=False)),
+    (
+        "contour-special",
+        lambda: plot(besselj(0, x * y), (x, 1.5, 6), (y, -3, 3), kind="contour", verbose=False),
+    ),
+    ("implicit-special", lambda: plot(Eq(besselj(0, x * y), 0.2), (x, 1.5, 6), (y, -3, 3), verbose=False)),
+    ("region-special", lambda: plot(besselj(0, x * y) > 0.2, (x, 1.5, 6), (y, -3, 3), verbose=False)),
+    (
+        "psurface-special",
+        lambda: plot((t * cos(z), t * sin(z), Si(t)), (t, 0.5, 3), (z, 0, 6.28), verbose=False),
+    ),
+    ("space-special", lambda: plot((cos(t), sin(t), Si(t)), (t, 0.5, 6.0), verbose=False)),
 )
 RICH_IDS = [label for label, _ in RICH_CASES]
 
@@ -289,6 +309,25 @@ class TestTheRicherKindsMatch:
             mine = getattr(ours.layout.scene, axis).title.text
             yours = getattr(theirs.layout.scene, axis).title.text
             assert mine == yours, f"scene.{axis} title differs"
+
+    def test_emitted_code_keeps_the_exact_fallback(
+        self, headless_show: list[Any]
+    ) -> None:
+        """Some heads are printable by neither NumPy nor mpmath.
+
+        Runtime sampling reaches SymPy substitution for these; emitted code
+        must use the same final tier rather than silently producing all NaN.
+        """
+        result = plot(
+            DiracDelta(x * y - 0.123),
+            (x, 1.0, 2.0),
+            (y, 1.0, 2.0),
+            verbose=False,
+        )
+        namespace: dict[str, Any] = {}
+        exec(compile(result.python(), "<show_python>", "exec"), namespace)  # noqa: S102
+        emitted = namespace["fig"]
+        _assert_array_equal(result.plotly.data[0].z, emitted.data[0].z)
 
 
 class TestAnimationFramesSurvive:

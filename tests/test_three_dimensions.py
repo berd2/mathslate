@@ -16,6 +16,8 @@ is written down rather than glossed over.
 
 from __future__ import annotations
 
+from typing import Callable
+
 import numpy as np
 import pytest
 import sympy as sp
@@ -24,6 +26,7 @@ import plotly.graph_objects as go
 
 from mathslate import Eq, cos, exp, plot, sin, sqrt, t, theta, x, y
 from mathslate.core import surfaces
+from mathslate.result import PlotResult
 from mathslate.errors import (
     AmbiguousAxisError,
     SamplingError,
@@ -302,6 +305,129 @@ class TestShowPython:
         exec(compile(result.python(), "<c>", "exec"), namespace)  # noqa: S102
         assert namespace["fig"].layout.title.text == "Helix"  # type: ignore[union-attr]
         assert namespace["fig"].data[0].mode == "markers"  # type: ignore[union-attr]
+
+
+class TestSpecialFunctionsInTwoVariables:
+    """NumPy has no ``besselj``, ``Si`` or ``zeta``; mpmath does.
+
+    The point-by-point fallback used to call the same NumPy function that had
+    just failed, so it failed again at every point, every point became NaN, and
+    each of these was refused as having "no real values anywhere on the grid" —
+    about functions that are real across the whole of it. One variable had an
+    mpmath tier; two did not.
+    """
+
+    BUILDS: tuple[tuple[str, Callable[[], PlotResult]], ...] = (
+        ("surface-besselj", lambda: plot(sp.besselj(0, x * y), (x, 1.5, 6), (y, -3, 3), verbose=False)),
+        ("surface-Si", lambda: plot(sp.Si(x) + y, (x, 1.5, 6), (y, -3, 3), verbose=False)),
+        ("surface-zeta", lambda: plot(sp.zeta(x) * y, (x, 1.5, 6), (y, -3, 3), verbose=False)),
+        (
+            "contour-besselj",
+            lambda: plot(sp.besselj(0, x * y), (x, 1.5, 6), (y, -3, 3), kind="contour", verbose=False),
+        ),
+        ("implicit-besselj", lambda: plot(Eq(sp.besselj(0, x * y), 0.2), (x, 1.5, 6), (y, -3, 3), verbose=False)),
+        ("region-besselj", lambda: plot(sp.besselj(0, x * y) > 0.2, (x, 1.5, 6), (y, -3, 3), verbose=False)),
+        (
+            "psurface-Si",
+            lambda: plot((t * cos(theta), t * sin(theta), sp.Si(t)), (t, 0.5, 3), (theta, 0, 6.28), verbose=False),
+        ),
+    )
+
+    @pytest.mark.parametrize(("label", "build"), BUILDS, ids=[b[0] for b in BUILDS])
+    def test_it_is_drawn(self, label: str, build: Callable[[], PlotResult]) -> None:
+        sample = build().plan.series[0].sample
+        assert np.count_nonzero(np.isfinite(sample.z)) > 0
+
+    @pytest.mark.parametrize(("label", "build"), BUILDS, ids=[b[0] for b in BUILDS])
+    def test_it_says_it_was_sampled_point_by_point(
+        self, label: str, build: Callable[[], PlotResult]
+    ) -> None:
+        """PRD 5.3 step 6: the slower path is taken loudly, never silently."""
+        result = build()
+        assert result.plan.series[0].sample.vectorized is False
+        assert any("point by point" in note for note in result.notes)
+
+    def test_the_values_are_the_function_not_merely_finite(self) -> None:
+        sample = plot(
+            sp.besselj(0, x * y), (x, 1.5, 6), (y, -3, 3), verbose=False
+        ).plan.series[0].sample
+        assert np.isfinite(sample.z).all()
+        row, column = 7, 41  # z is (len(y), len(x))
+        expected = float(
+            sp.besselj(0, sp.Float(sample.x[column]) * sp.Float(sample.y[row])).evalf(30)
+        )
+        assert sample.z[row, column] == pytest.approx(expected, rel=1e-12)
+
+    def test_a_tier_missing_a_name_is_not_retried_at_every_point(self) -> None:
+        """`NameError` means the backend lacks the function at every point
+        alike; retrying it across a 200×200 region grid only costs time."""
+        calls: dict[str, int] = {"numpy": 0}
+
+        def missing(a: float, b: float) -> object:
+            calls["numpy"] += 1
+            raise NameError("name 'besselj' is not defined")
+
+        point = surfaces._PointEvaluator(sp.besselj(0, x * y), (x, y), missing)
+        for step in range(1, 50):
+            point(step / 10.0, 1.0)
+        assert calls["numpy"] == 1
+
+    def test_a_relation_with_no_truth_value_is_not_shaded_in(self) -> None:
+        """`bool(nan)` is True, which used to count an unevaluable point as
+        inside the region wherever its operands happened to be finite."""
+
+        def undecidable(a: float, b: float) -> object:
+            raise TypeError("cannot determine truth value of Relational")
+
+        assert surfaces._safe_truth(undecidable, 0.0, 0.0) is False
+
+
+class TestASpaceCurveReportsItsThirdComponent:
+    """The z of a space curve rides along on the grid x and y chose.
+
+    It was evaluated by a `NumericFunction` created inline and dropped, so its
+    fall-back to the element-wise path left no trace: the sample still said
+    `vectorized=True`, no note appeared, and `show_python()` — deciding from
+    that flag — printed a NumPy-only program that died on `Si`.
+    """
+
+    def test_a_z_that_fell_back_marks_the_sample(self) -> None:
+        with pytest.warns(RuntimeWarning, match="vectorised evaluation failed"):
+            result = plot((cos(t), sin(t), sp.Si(t)), (t, 0.5, 6.0), verbose=False)
+        sample = result.plan.series[0].sample
+        assert sample.vectorized is False
+        assert any("vectorised evaluation failed" in note for note in result.notes)
+        assert np.isfinite(np.asarray(sample.z, dtype=float)).any()
+
+    def test_an_ordinary_space_curve_stays_vectorised(self) -> None:
+        assert plot((cos(t), sin(t), t), (t, 0.0, 9.0), verbose=False).plan.series[0].sample.vectorized
+
+    def test_a_space_curve_with_no_finite_z_is_rejected(self) -> None:
+        unknown = sp.Function("unknown")
+        with pytest.raises(SamplingError, match="no finite points"):
+            plot((cos(t), sin(t), unknown(t)), (t, 0.0, 2.0), verbose=False)
+
+    def test_a_jump_in_z_breaks_the_space_curve(self) -> None:
+        result = plot(
+            (cos(t), sin(t), sp.floor(t)), (t, -2.5, 2.5), verbose=False
+        )
+        sample = result.plan.series[0].sample
+        assert len(sample.breakpoints) == 5
+        assert all(
+            any(abs(point - integer) < 1e-8 for point in sample.breakpoints)
+            for integer in range(-2, 3)
+        )
+        assert np.count_nonzero(np.isnan(sample.z)) >= 5
+
+    def test_a_parametric_surface_with_an_invalid_coordinate_is_rejected(self) -> None:
+        unknown = sp.Function("unknown")
+        with pytest.raises(SamplingError, match="no finite points"):
+            plot(
+                (unknown(t, theta), t, theta),
+                (t, 0.0, 1.0),
+                (theta, 0.0, 1.0),
+                verbose=False,
+            )
 
 
 def _points(trace: object) -> np.ndarray:

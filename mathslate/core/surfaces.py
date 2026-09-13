@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Callable, Final
 
 import numpy as np
 import sympy as sp
@@ -83,7 +83,10 @@ class SurfaceSample:
 
     @property
     def finite_count(self) -> int:
-        return int(np.count_nonzero(np.isfinite(self.z)))
+        finite = np.isfinite(self.z)
+        if self.parametric:
+            finite &= np.isfinite(self.x) & np.isfinite(self.y)
+        return int(np.count_nonzero(finite))
 
 
 def _grid_values(
@@ -106,8 +109,9 @@ def _grid_values(
                 "vectorised evaluation failed; the surface was sampled point by "
                 "point, which is slower.",
             )
+            point = _PointEvaluator(expr, symbols, function)
             scalar = np.vectorize(
-                lambda a, b: _safe(function, a, b), otypes=[np.complex128]
+                lambda a, b: _safe(point, a, b), otypes=[np.complex128]
             )
             raw = scalar(mesh_x, mesh_y)
 
@@ -120,11 +124,92 @@ def _grid_values(
     return values.astype(np.float64), vectorized, notes
 
 
-def _safe(function: object, a: float, b: float) -> complex:
+class _PointEvaluator:
+    """One grid point at a time, for an expression NumPy could not take whole.
+
+    The fallback used to call the *same* NumPy-lambdified function point by
+    point. That rescues an expression whose only problem was broadcasting, and
+    nothing else: when vectorised evaluation failed because NumPy has no
+    ``besselj``, ``Si`` or ``zeta``, it failed identically at every one of the
+    3600 points, every point became NaN, and ``plot(besselj(0, x*y))`` was
+    refused as having "no real values anywhere" — a false statement about a
+    function that is real everywhere on that grid. The one-variable sampler
+    solved exactly this with an mpmath tier (see
+    :meth:`mathslate.core.sampling.NumericFunction._mpmath`); this is the same
+    ladder in two variables: NumPy, then mpmath, then SymPy's own ``evalf``.
+
+    A tier that raises ``NameError`` or ``KeyError`` is dropped for the rest of
+    the grid. Those mean "this backend has no printer or no function of that
+    name", which is true at every point alike, so retrying it 40 000 times on a
+    200×200 region grid would only cost time. Anything else — ``log`` of a
+    negative number, a division by zero — is about *this* point, and the next
+    point still gets every tier.
+    """
+
+    def __init__(
+        self,
+        expr: sp.Basic,
+        symbols: tuple[sp.Symbol, sp.Symbol],
+        vector: Callable[[float, float], object],
+    ) -> None:
+        self._expr: sp.Basic = expr
+        self._symbols: tuple[sp.Symbol, sp.Symbol] = symbols
+        #: The mpmath callable, built on first need. ``False`` means "asked for
+        #: and unavailable", distinct from ``None`` = "not asked yet".
+        self._mp: Callable[[float, float], object] | None | bool = None
+        self._tiers: list[Callable[[float, float], object]] = [
+            vector,
+            self._mpmath,
+            self._exact,
+        ]
+
+    def __call__(self, a: float, b: float) -> object:
+        for tier in list(self._tiers):
+            try:
+                return tier(a, b)
+            except (NameError, KeyError):
+                self._tiers.remove(tier)  # missing at every point, not just this one
+            except EVALUATION_FAILURE:  # noqa: S112 - undefined here; try the next tier
+                continue
+        raise ValueError("no evaluation tier produced a value at this point")
+
+    def _mpmath(self, a: float, b: float) -> object:
+        if self._mp is None:
+            # Once per grid, not once per point, and the verdict is cached too.
+            try:
+                self._mp = sp.lambdify(self._symbols, self._expr, modules="mpmath")
+            except EVALUATION_FAILURE:
+                self._mp = False
+        if self._mp is False:
+            raise NameError("mpmath has no callable for this expression")
+        return self._mp(a, b)  # type: ignore[operator]
+
+    def _exact(self, a: float, b: float) -> object:
+        """Last resort, for a head mpmath cannot print. Slow and correct."""
+        first, second = self._symbols
+        return self._expr.subs({first: sp.Float(a), second: sp.Float(b)}).evalf()
+
+
+def _safe(point: Callable[[float, float], object], a: float, b: float) -> complex:
     try:
-        return complex(function(a, b))  # type: ignore[operator]
+        return complex(point(a, b))  # type: ignore[arg-type]
     except EVALUATION_FAILURE:  # an undefined point is not an error
         return complex("nan")
+
+
+def _safe_truth(point: Callable[[float, float], object], a: float, b: float) -> bool:
+    """A relation's truth value at one point, ``False`` where there is none.
+
+    ``bool(_safe(...))`` was used here before, and a NaN is truthy, so every
+    point the relation could not be evaluated at counted as *inside* the region.
+    The operand check in :func:`_grid_truth` then turned most of those into
+    holes, but only where an operand was itself non-finite — a failure in the
+    comparison with finite operands was shaded in.
+    """
+    try:
+        return bool(point(a, b))
+    except EVALUATION_FAILURE:  # no truth value here, so not shown as inside
+        return False
 
 
 def _clip(values: Array, percentiles: tuple[float, float] = (2.0, 98.0)) -> tuple[float, float] | None:
@@ -244,8 +329,9 @@ def _grid_truth(
                 "vectorised evaluation failed; the region was tested point by "
                 "point, which is slower.",
             )
+            point = _PointEvaluator(relation, symbols, test)
             scalar = np.vectorize(
-                lambda a, b: bool(_safe(test, a, b)), otypes=[bool]
+                lambda a, b: _safe_truth(point, a, b), otypes=[bool]
             )
             raw = scalar(mesh_x, mesh_y)
 

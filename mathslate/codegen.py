@@ -277,6 +277,8 @@ def _curve_code(plan: PlotPlan, options: RenderOptions) -> str:
     needed: set[str] = set()
     body: list[str] = []
 
+    if any(_pointwise(series.sample) for series in plan.series):
+        body += list(_POINTWISE_HELPER)
     body.append(f"{name} = sp.symbols({name!r}, real=True)")
     body.append("")
 
@@ -288,9 +290,24 @@ def _curve_code(plan: PlotPlan, options: RenderOptions) -> str:
         suffix = "" if len(plan.series) == 1 else str(index + 1)
         segments = _segments_source(series, plan.param_range)
         per_piece = max(EMITTED_POINTS // max(len(segments), 1), 50)
+        if _pointwise(series.sample):
+            # Drawn through the runtime's mpmath tier; NumPy alone has no such
+            # function, so the program must not ask only NumPy either.
+            function_line: list[str] = []
+            evaluation = [
+                f"    yp = evaluate(expr{suffix}, {name}, xp)",
+                "    " + _real_part("yp"),
+            ]
+        else:
+            function_line = [f"fn{suffix} = sp.lambdify({name}, expr{suffix}, 'numpy')"]
+            # lambdify returns a scalar for a constant expression, so broadcast
+            # back to the grid shape before using it.
+            evaluation = [
+                f"    yp = np.broadcast_to(np.asarray(fn{suffix}(xp), dtype=float), xp.shape)",
+            ]
         body += [
             f"expr{suffix} = {source}",
-            f"fn{suffix} = sp.lambdify({name}, expr{suffix}, 'numpy')",
+            *function_line,
             "",
             "# The expression is continuous on each of these pieces and nowhere",
             "# else. Sampling them separately and joining with a NaN is what stops",
@@ -300,9 +317,7 @@ def _curve_code(plan: PlotPlan, options: RenderOptions) -> str:
             f"for lo, hi in pieces{suffix}:",
             "    inset = (hi - lo) * 1e-9",
             f"    xp = np.linspace(lo + inset, hi - inset, {per_piece})",
-            # lambdify returns a scalar for a constant expression, so broadcast
-            # back to the grid shape before using it.
-            f"    yp = np.broadcast_to(np.asarray(fn{suffix}(xp), dtype=float), xp.shape)",
+            *evaluation,
             f"    xs{suffix} += [xp, np.array([np.nan])]",
             f"    ys{suffix} += [yp, np.array([np.nan])]",
             f"xs{suffix} = np.concatenate(xs{suffix})",
@@ -353,10 +368,31 @@ def _parametric_code(plan: PlotPlan, options: RenderOptions) -> str:
 
     segments = _segments_source(series, plan.param_range)
     per_piece = max(EMITTED_POINTS // max(len(segments), 1), 50)
+    symbols_line = f"{name} = sp.symbols({name!r}, real=True)"
+    if _pointwise(series.sample):
+        # A component names a function NumPy does not carry (see
+        # `_POINTWISE_HELPER`); `evaluate` still takes NumPy's one pass for the
+        # component that does not.
+        header = [*_POINTWISE_HELPER, symbols_line, f"x_expr = {sx}", f"y_expr = {sy}"]
+        evaluation = [
+            f"    xp = evaluate(x_expr, {name}, tp)",
+            "    " + _real_part("xp"),
+            f"    yp = evaluate(y_expr, {name}, tp)",
+            "    " + _real_part("yp"),
+        ]
+    else:
+        header = [
+            symbols_line,
+            f"x_of = sp.lambdify({name}, {sx}, 'numpy')",
+            f"y_of = sp.lambdify({name}, {sy}, 'numpy')",
+        ]
+        # broadcast_to covers a constant component, where lambdify returns a scalar.
+        evaluation = [
+            "    xp = np.broadcast_to(np.asarray(x_of(tp), dtype=float), tp.shape)",
+            "    yp = np.broadcast_to(np.asarray(y_of(tp), dtype=float), tp.shape)",
+        ]
     body = [
-        f"{name} = sp.symbols({name!r}, real=True)",
-        f"x_of = sp.lambdify({name}, {sx}, 'numpy')",
-        f"y_of = sp.lambdify({name}, {sy}, 'numpy')",
+        *header,
         "",
         f"# Both components are continuous on each of these pieces of {name} and",
         "# nowhere else. Sampling them separately and joining with a NaN is what",
@@ -366,9 +402,7 @@ def _parametric_code(plan: PlotPlan, options: RenderOptions) -> str:
         "for lo, hi in pieces:",
         "    inset = (hi - lo) * 1e-9",
         f"    tp = np.linspace(lo + inset, hi - inset, {per_piece})",
-        # broadcast_to covers a constant component, where lambdify returns a scalar.
-        "    xp = np.broadcast_to(np.asarray(x_of(tp), dtype=float), tp.shape)",
-        "    yp = np.broadcast_to(np.asarray(y_of(tp), dtype=float), tp.shape)",
+        *evaluation,
         "    ts += [tp, np.array([np.nan])]",
         "    xs += [xp, np.array([np.nan])]",
         "    ys += [yp, np.array([np.nan])]",
@@ -464,15 +498,33 @@ def _two_variable_code(plan: PlotPlan, options: RenderOptions) -> str:
     lo, hi = plan.param_range or (-5.0, 5.0)
     vlo, vhi = plan.second_range
 
-    body = [
-        f"{first}, {second} = sp.symbols({first + ' ' + second!r}, real=True)",
-        f"expr = {source}",
-        f"fn = sp.lambdify(({first}, {second}), expr, 'numpy')",
-        "",
+    symbols_line = f"{first}, {second} = sp.symbols({first + ' ' + second!r}, real=True)"
+    grid = [
         f"{first}s = np.linspace({_fmt(lo)}, {_fmt(hi)}, {resolution})",
         f"{second}s = np.linspace({_fmt(vlo)}, {_fmt(vhi)}, {resolution})",
         f"grid_{first}, grid_{second} = np.meshgrid({first}s, {second}s)",
-        f"z = np.asarray(fn(grid_{first}, grid_{second}), dtype=complex)",
+    ]
+    if _pointwise(sample):
+        # NumPy could not take this expression whole (a special function it
+        # does not carry), so neither can a program that only asks NumPy.
+        body = [
+            *_POINTWISE_HELPER,
+            symbols_line,
+            f"expr = {source}",
+            "",
+            *grid,
+            f"z = evaluate(expr, ({first}, {second}), grid_{first}, grid_{second})",
+        ]
+    else:
+        body = [
+            symbols_line,
+            f"expr = {source}",
+            f"fn = sp.lambdify(({first}, {second}), expr, 'numpy')",
+            "",
+            *grid,
+            f"z = np.asarray(fn(grid_{first}, grid_{second}), dtype=complex)",
+        ]
+    body += [
         "# Anything not a real number becomes a hole rather than a wrong value.",
         "z = np.where(np.abs(z.imag) > 1e-9 * np.maximum(np.abs(z.real), 1.0),",
         "             np.nan, z.real)",
@@ -509,25 +561,51 @@ def _region_code(plan: PlotPlan, options: RenderOptions) -> str:
     for operand in operands:
         needed |= _expr_source(operand, {first, second})[1]
 
-    body = [
-        f"{first}, {second} = sp.symbols({first + ' ' + second!r}, real=True)",
-        f"relation = {source}",
-        f"test = sp.lambdify(({first}, {second}), relation, 'numpy')",
-        "",
+    symbols_line = f"{first}, {second} = sp.symbols({first + ' ' + second!r}, real=True)"
+    grid = [
         f"{first}s = np.linspace({_fmt(lo)}, {_fmt(hi)}, {resolution})",
         f"{second}s = np.linspace({_fmt(vlo)}, {_fmt(vhi)}, {resolution})",
         f"grid_{first}, grid_{second} = np.meshgrid({first}s, {second}s)",
-        f"inside = np.where(test(grid_{first}, grid_{second}), 1.0, 0.0)",
     ]
+    pointwise = _pointwise(sample)
+    grids = f"({first}, {second}), grid_{first}, grid_{second}"
+    if pointwise:
+        # The relation names a function NumPy does not carry. A point with no
+        # truth value is not inside: `evaluate` gives NaN there, whose real
+        # part fails the `> 0.5` test — the runtime's `_safe_truth` rule.
+        body = [
+            *_POINTWISE_HELPER,
+            symbols_line,
+            f"relation = {source}",
+            "",
+            *grid,
+            f"inside = np.where(evaluate(relation, {grids}).real > 0.5, 1.0, 0.0)",
+        ]
+    else:
+        body = [
+            symbols_line,
+            f"relation = {source}",
+            f"test = sp.lambdify(({first}, {second}), relation, 'numpy')",
+            "",
+            *grid,
+            f"inside = np.where(test(grid_{first}, grid_{second}), 1.0, 0.0)",
+        ]
     if operand_sources:
+        operand_values = (
+            [f"    values = evaluate(side, {grids})"]
+            if pointwise
+            else [
+                f"    values = sp.lambdify(({first}, {second}), side, 'numpy')"
+                f"(grid_{first}, grid_{second})",
+            ]
+        )
         body += [
             "",
             "# A comparison against a NaN is False, which is indistinguishable from",
             "# being outside the region — so the operands decide where there is no",
             "# truth value at all, and those points become holes.",
             f"for side in [{', '.join(operand_sources)}]:",
-            f"    values = sp.lambdify(({first}, {second}), side, 'numpy')"
-            f"(grid_{first}, grid_{second})",
+            *operand_values,
             "    values = np.broadcast_to(np.asarray(values, dtype=complex),"
             f" grid_{first}.shape)",
             "    real = np.where(np.abs(values.imag) > 1e-9 *"
@@ -636,21 +714,36 @@ def _parametric_surface_code(plan: PlotPlan, options: RenderOptions) -> str:
         needed |= extra
         sources.append(text)
 
-    body = [
-        f"{first}, {second} = sp.symbols({first + ' ' + second!r}, real=True)",
-        f"fx = sp.lambdify(({first}, {second}), {sources[0]}, 'numpy')",
-        f"fy = sp.lambdify(({first}, {second}), {sources[1]}, 'numpy')",
-        f"fz = sp.lambdify(({first}, {second}), {sources[2]}, 'numpy')",
-        "",
+    symbols_line = f"{first}, {second} = sp.symbols({first + ' ' + second!r}, real=True)"
+    grid = [
         f"{first}s = np.linspace({_fmt(lo)}, {_fmt(hi)}, {resolution})",
         f"{second}s = np.linspace({_fmt(vlo)}, {_fmt(vhi)}, {resolution})",
         f"grid_{first}, grid_{second} = np.meshgrid({first}s, {second}s)",
-        "# broadcast_to covers a component that does not use both parameters.",
-        f"shape = grid_{first}.shape",
-        f"xs = np.broadcast_to(np.asarray(fx(grid_{first}, grid_{second}), float), shape)",
-        f"ys = np.broadcast_to(np.asarray(fy(grid_{first}, grid_{second}), float), shape)",
-        f"zs = np.broadcast_to(np.asarray(fz(grid_{first}, grid_{second}), float), shape)",
-        "",
+    ]
+    if _pointwise(series.sample):
+        # A component names a function NumPy does not carry. `evaluate` still
+        # takes NumPy's one pass for the components that do not.
+        grids = f"({first}, {second}), grid_{first}, grid_{second}"
+        body = [*_POINTWISE_HELPER, symbols_line, "", *grid]
+        for name, text in zip(("xs", "ys", "zs"), sources):
+            body += [f"{name} = evaluate({text}, {grids})", _real_part(name)]
+        body.append("")
+    else:
+        body = [
+            symbols_line,
+            f"fx = sp.lambdify(({first}, {second}), {sources[0]}, 'numpy')",
+            f"fy = sp.lambdify(({first}, {second}), {sources[1]}, 'numpy')",
+            f"fz = sp.lambdify(({first}, {second}), {sources[2]}, 'numpy')",
+            "",
+            *grid,
+            "# broadcast_to covers a component that does not use both parameters.",
+            f"shape = grid_{first}.shape",
+            f"xs = np.broadcast_to(np.asarray(fx(grid_{first}, grid_{second}), float), shape)",
+            f"ys = np.broadcast_to(np.asarray(fy(grid_{first}, grid_{second}), float), shape)",
+            f"zs = np.broadcast_to(np.asarray(fz(grid_{first}, grid_{second}), float), shape)",
+            "",
+        ]
+    body += [
         f"fig = go.Figure(go.Surface(x=xs, y=ys, z=zs, showscale=False"
         f"{_mesh_kwarg(options, plan)}))",
     ]
@@ -678,11 +771,33 @@ def _space_curve_code(plan: PlotPlan, options: RenderOptions) -> str:
     )
     if options.title is not None:
         layout += f", title={options.title!r}"
+    symbols_line = f"{name} = sp.symbols({name!r}, real=True)"
+    if _pointwise(series.sample):
+        # A component names a function NumPy does not carry (see
+        # `_POINTWISE_HELPER`); `evaluate` still takes NumPy's one pass for the
+        # components that do not.
+        header = [*_POINTWISE_HELPER, symbols_line]
+        evaluation: list[str] = []
+        for axis, text in zip("xyz", sources):
+            evaluation += [
+                f"    {axis}p = evaluate({text}, {name}, tp)",
+                "    " + _real_part(f"{axis}p"),
+                f"    {axis}s += [{axis}p, np.array([np.nan])]",
+            ]
+    else:
+        header = [
+            symbols_line,
+            f"x_of = sp.lambdify({name}, {sources[0]}, 'numpy')",
+            f"y_of = sp.lambdify({name}, {sources[1]}, 'numpy')",
+            f"z_of = sp.lambdify({name}, {sources[2]}, 'numpy')",
+        ]
+        evaluation = [
+            "    xs += [np.broadcast_to(np.asarray(x_of(tp), float), tp.shape), np.array([np.nan])]",
+            "    ys += [np.broadcast_to(np.asarray(y_of(tp), float), tp.shape), np.array([np.nan])]",
+            "    zs += [np.broadcast_to(np.asarray(z_of(tp), float), tp.shape), np.array([np.nan])]",
+        ]
     body = [
-        f"{name} = sp.symbols({name!r}, real=True)",
-        f"x_of = sp.lambdify({name}, {sources[0]}, 'numpy')",
-        f"y_of = sp.lambdify({name}, {sources[1]}, 'numpy')",
-        f"z_of = sp.lambdify({name}, {sources[2]}, 'numpy')",
+        *header,
         "",
         f"# All three components are continuous on these pieces of {name}.",
         f"pieces = {_fmt_pairs(segments)}",
@@ -690,9 +805,7 @@ def _space_curve_code(plan: PlotPlan, options: RenderOptions) -> str:
         "for lo, hi in pieces:",
         "    inset = (hi - lo) * 1e-9",
         f"    tp = np.linspace(lo + inset, hi - inset, {per_piece})",
-        "    xs += [np.broadcast_to(np.asarray(x_of(tp), float), tp.shape), np.array([np.nan])]",
-        "    ys += [np.broadcast_to(np.asarray(y_of(tp), float), tp.shape), np.array([np.nan])]",
-        "    zs += [np.broadcast_to(np.asarray(z_of(tp), float), tp.shape), np.array([np.nan])]",
+        *evaluation,
         "xs, ys, zs = np.concatenate(xs), np.concatenate(ys), np.concatenate(zs)",
         "",
         f"fig = go.Figure(go.Scatter3d(x=xs, y=ys, z=zs, "
@@ -937,6 +1050,60 @@ def _layout_lines(plan: PlotPlan, options: RenderOptions) -> list[str]:
     return lines
 
 
+
+
+#: Emitted into a program only when its plot could not be evaluated by NumPy in
+#: one pass — ``besselj``, ``Si``, ``zeta`` and the other special functions
+#: NumPy does not carry. Every emitter printed ``sp.lambdify(..., 'numpy')``
+#: unconditionally, so for those the program died on its first evaluation with
+#: ``NameError: name 'besselj' is not defined`` — beside a figure that had just
+#: been drawn. The ladder is the runtime's own
+#: (:class:`mathslate.core.sampling.NumericFunction`,
+#: :class:`mathslate.core.surfaces._PointEvaluator`): NumPy whole, then NumPy
+#: point by point, then mpmath point by point, and NaN where none of them has a
+#: number. A plot NumPy handled never gets it, so ordinary programs stay short.
+_POINTWISE_HELPER: tuple[str, ...] = (
+    "def evaluate(expression, symbols, *grids):",
+    '    """NumPy in one pass where it can; one point at a time where it cannot."""',
+    "    numeric = sp.lambdify(symbols, expression, 'numpy')",
+    "    try:",
+    "        whole = np.asarray(numeric(*grids), dtype=complex)",
+    "        return np.broadcast_to(whole, grids[0].shape)",
+    "    except (ArithmeticError, AttributeError, NameError, TypeError, ValueError):",
+    "        pass",
+    "    # NumPy has no besselj, Si or zeta; mpmath does. SymPy's exact",
+    "    # substitution remains the last resort for heads mpmath cannot call.",
+    "    special = sp.lambdify(symbols, expression, 'mpmath')",
+    "    symbol_tuple = (symbols,) if isinstance(symbols, sp.Symbol) else tuple(symbols)",
+    "",
+    "    def one(*values):",
+    "        for candidate in (numeric, special):",
+    "            try:",
+    "                return complex(candidate(*values))",
+    "            except (ArithmeticError, AttributeError, NameError, TypeError, ValueError):",
+    "                continue",
+    "        try:",
+    "            exact = expression.subs(dict(zip(symbol_tuple, values))).evalf()",
+    "            return complex(exact)",
+    "        except (ArithmeticError, AttributeError, KeyError, NameError, TypeError, ValueError):",
+    "            return complex('nan')",
+    "",
+    "    return np.vectorize(one, otypes=[complex])(*grids)",
+    "",
+)
+
+
+def _pointwise(sample: object) -> bool:
+    """Whether this plot's samples needed the point-by-point ladder."""
+    return getattr(sample, "vectorized", True) is False
+
+
+def _real_part(name: str) -> str:
+    """Source turning complex array ``name`` into reals, NaN where not real."""
+    return (
+        f"{name} = np.where(np.abs({name}.imag) > 1e-9 * "
+        f"np.maximum(np.abs({name}.real), 1.0), np.nan, {name}.real)"
+    )
 
 
 def _assemble(needed: set[str], body: list[str], *, sympy_needed: bool = True) -> str:
