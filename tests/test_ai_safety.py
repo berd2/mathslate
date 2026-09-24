@@ -199,6 +199,18 @@ class TestStringsThatReachSympifyByAnotherRoad:
         monkeypatch.setenv("OPENBLAS_NUM_THREADS", "2")
         assert _sandbox._child_environment()["OPENBLAS_NUM_THREADS"] == "2"
 
+    def test_the_child_can_import_the_callers_mathslate(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A source checkout on PYTHONPATH, or a `sys.path.insert()`, must still run."""
+        monkeypatch.delenv("PYTHONPATH", raising=False)
+        root = str(_sandbox._mathslate_root())
+        assert _sandbox._child_environment()["PYTHONPATH"].split(os.pathsep) == [root]
+
+        monkeypatch.setenv("PYTHONPATH", "/opt/site-extra")
+        parts = _sandbox._child_environment()["PYTHONPATH"].split(os.pathsep)
+        assert parts == [root, "/opt/site-extra"]
+
     def test_a_reply_naming_an_arbitrary_callable_is_not_unpickled(self) -> None:
         import io
         import pickle

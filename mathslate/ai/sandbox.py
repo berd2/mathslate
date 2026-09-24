@@ -284,6 +284,7 @@ _CHILD_ENV_NAMES: Final[frozenset[str]] = frozenset(
     {
         # Python/process startup on Windows and POSIX.
         "COMSPEC",
+        "LD_LIBRARY_PATH",
         "HOME",
         "HOMEDRIVE",
         "HOMEPATH",
@@ -298,6 +299,10 @@ _CHILD_ENV_NAMES: Final[frozenset[str]] = frozenset(
         "TZ",
         "USERPROFILE",
         "WINDIR",
+        # Where the host's Python finds its packages. A source checkout or an
+        # HPC module may provide MathSlate or its dependencies only this way.
+        "PYTHONHOME",
+        "PYTHONPATH",
         # Deterministic text/hash behaviour explicitly selected by the host.
         "PYTHONHASHSEED",
         "PYTHONIOENCODING",
@@ -318,12 +323,30 @@ def _child_environment() -> dict[str, str]:
     """A minimal process environment containing no caller credentials."""
     environment: dict[str, str] = {}
     for name, value in os.environ.items():
+        # Windows variable names are case-insensitive (`Path`, `SystemRoot`).
         normalized = name.upper()
         if normalized in _CHILD_ENV_NAMES or normalized.startswith(
             _CHILD_ENV_PREFIXES
         ):
             environment[name] = value
+    # The child must import the MathSlate this process is running, even when it
+    # was found through `sys.path.insert()` in a notebook rather than through
+    # an installation or the environment.
+    root = str(_mathslate_root())
+    inherited = next(
+        (name for name in environment if name.upper() == "PYTHONPATH"), "PYTHONPATH"
+    )
+    existing = environment.get(inherited, "")
+    if root not in existing.split(os.pathsep):
+        environment[inherited] = os.pathsep.join(p for p in (root, existing) if p)
     return environment
+
+
+def _mathslate_root() -> Path:
+    """The directory holding the ``mathslate`` package this process imported."""
+    import mathslate
+
+    return Path(mathslate.__file__).resolve().parents[1]
 
 
 #: What a restricted result may be rebuilt from: classes of these packages,
