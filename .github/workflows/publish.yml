@@ -10,8 +10,26 @@ permissions:
   contents: read
 
 jobs:
+  # Seconds, not the full suite: a tag that disagrees with the version in the
+  # checkout would publish the wrong number, or fail only at the upload.
+  tag_matches_version:
+    name: Tag matches the package version
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python scripts/release_version.py --check-tag "${{ github.ref_name }}"
+
   verify:
     name: Release verification
+    # `tag_matches_version` is skipped on a manual run, which has no tag.
+    # A skipped dependency would skip this job too; the condition runs it
+    # unless the check actually failed.
+    needs: tag_matches_version
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -31,6 +49,11 @@ jobs:
 
   core_install:
     name: Core install has no optional dependencies
+    # `tag_matches_version` is skipped on a manual run, which has no tag.
+    # A skipped dependency would skip this job too; the condition runs it
+    # unless the check actually failed.
+    needs: tag_matches_version
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
