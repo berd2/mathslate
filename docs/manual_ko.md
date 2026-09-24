@@ -1928,5 +1928,5 @@ MathSlate는 또한 CAS(컴퓨터 대수 시스템)가 아니며, 노트북도 �
 ## 함께 보기
 
 - [튜토리얼](tutorial_ko.md) — 가이드가 포함된 단계별 소개입니다.
-- [PRD](../mathslate_prd_0.3.md) — 프로젝트가 왜 이런 형태로 설계되었는지, 달성하지 않기로 한 목표는 무엇인지, 그리고 주요 인수 기준(acceptance criteria)에 대한 근거와 구현 상태.
+- [PRD](design/mathslate_prd_0.3.md) — 프로젝트가 왜 이런 형태로 설계되었는지, 달성하지 않기로 한 목표는 무엇인지, 그리고 주요 인수 기준(acceptance criteria)에 대한 근거와 구현 상태.
 - `README` — 짧은 요약본.

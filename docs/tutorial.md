@@ -632,7 +632,7 @@ does, with zero conversion.
 
 - The [reference manual](manual.md) — every option, the full dispatch
   contract, the sampling algorithm, and the exact guarantees.
-- The [PRD](../mathslate_prd_0.3.md) — why the project is shaped this way,
+- The [PRD](design/mathslate_prd_0.3.md) — why the project is shaped this way,
   and what it deliberately refuses to do.
 - `examples/quickstart.py` — everything in this tutorial as one runnable file.
 

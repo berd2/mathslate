@@ -2452,6 +2452,6 @@ Plotly is confined to one file so that swapping the backend later stays cheap.
 ## See also
 
 - [Tutorial](tutorial.md) — the guided introduction.
-- [PRD](../mathslate_prd_0.3.md) — the design rationale, the non-goals, and
+- [PRD](design/mathslate_prd_0.3.md) — the design rationale, the non-goals, and
   the implementation status with acceptance-criteria evidence.
 - [`README`](../README.md) — the short version.

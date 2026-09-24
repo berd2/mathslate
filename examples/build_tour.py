@@ -754,7 +754,7 @@ CELLS: list[str] = [
 
         - `docs/tutorial.md` — the guided introduction in prose
         - `docs/manual.md` — every option and the exact guarantees
-        - `mathslate_prd_0.3.md` — why it is shaped this way
+        - `docs/design/mathslate_prd_0.3.md` — why it is shaped this way
         """
     ),
     """

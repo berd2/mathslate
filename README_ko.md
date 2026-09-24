@@ -15,7 +15,7 @@ curve | x ∈ [-10, 10] | 411 samples | 1 discontinuity handled
   · singularities at x = 0
 ```
 
-![plot-2D](plot-2D.png)
+![plot-2D](https://raw.githubusercontent.com/berd2/mathslate/master/docs/images/plot-2D.png)
 
 이것이 첫 번째 레슨의 전부입니다. `symbols`, `lambdify`, `linspace`, `figure`, `show`와 같은 설정은 필요하지 않습니다. 그러한 도구를 사용할 준비가 되었다면, 다음과 같이 요청하세요:
 
@@ -117,7 +117,7 @@ plot([sin(x), cos(x)])     # 두 곡선을 중첩
 plot((sin(t), cos(t)))     # 하나의 매개변수 곡선
 ```
 
-![plot-3D](plot-3D.png)
+![plot-3D](https://raw.githubusercontent.com/berd2/mathslate/master/docs/images/plot-3D.png)
 
 그 외의 모든 것은 디스패치 규칙을 따릅니다:
 
@@ -349,6 +349,6 @@ jupyter lab examples/mathslate_tour.ipynb
 
 - **[튜토리얼](docs/tutorial_ko.md)** — 첫 번째 그래프를 그리는 것부터 실제 Python 코드를 읽는 것까지, 한 번에 훑어보는 가이드입니다. 여기서부터 시작하세요.
 - **[레퍼런스 매뉴얼](docs/manual_ko.md)** — 모든 옵션, 전체 디스패치 규칙, 샘플링 알고리즘 및 정확한 보증 사항을 다룹니다.
-- [`mathslate_prd_0.3.md`](mathslate_prd_0.3.md) — 제품 요구사항 문서(PRD)로, 최신 상태로 유지되는 구현 상태 섹션이 포함되어 있습니다.
+- [`docs/design/mathslate_prd_0.3.md`](docs/design/mathslate_prd_0.3.md) — 제품 요구사항 문서(PRD)로, 최신 상태로 유지되는 구현 상태 섹션이 포함되어 있습니다.
 
 두 문서의 모든 `python` 예제는 테스트 제품군에 의해 문서 순서대로 실행되므로, 매뉴얼의 코드는 실제 동작과 일치함이 보장됩니다.
