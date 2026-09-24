@@ -274,21 +274,56 @@ def _run_restricted(code: str) -> tuple[dict[str, Any], str]:
     return payload
 
 
-#: Environment variables withheld from the restricted process, by name shape.
-#: Nothing it legitimately runs needs a credential, and a policy bypass should
-#: not find the provider key one ``os.environ`` away.
-_SECRET_ENV_NAME = re.compile(
-    r"(?i)(^|_)(API_?KEY|KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTH)(_|$)"
+#: The small, non-secret part of the caller's environment that the child may
+#: need to start Python and load numeric libraries. A denylist cannot support
+#: the promise that credentials are absent: ordinary names such as
+#: ``PGPASSWORD``, ``GITHUB_PAT`` and ``DATABASE_URL`` do not share a reliable
+#: spelling. Keep this an allowlist instead, and add a name only when restricted
+#: MathSlate execution demonstrably needs it.
+_CHILD_ENV_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        # Python/process startup on Windows and POSIX.
+        "COMSPEC",
+        "HOME",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "LANG",
+        "PATH",
+        "PATHEXT",
+        "SYSTEMDRIVE",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "TZ",
+        "USERPROFILE",
+        "WINDIR",
+        # Deterministic text/hash behaviour explicitly selected by the host.
+        "PYTHONHASHSEED",
+        "PYTHONIOENCODING",
+        "PYTHONUTF8",
+        # Thread ceilings used by NumPy and its common BLAS backends.
+        "BLIS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+    }
 )
+_CHILD_ENV_PREFIXES: Final[tuple[str, ...]] = ("LC_",)
 
 
 def _child_environment() -> dict[str, str]:
-    """The caller's environment without anything that looks like a credential."""
-    return {
-        name: value
-        for name, value in os.environ.items()
-        if not _SECRET_ENV_NAME.search(name)
-    }
+    """A minimal process environment containing no caller credentials."""
+    environment: dict[str, str] = {}
+    for name, value in os.environ.items():
+        normalized = name.upper()
+        if normalized in _CHILD_ENV_NAMES or normalized.startswith(
+            _CHILD_ENV_PREFIXES
+        ):
+            environment[name] = value
+    return environment
 
 
 #: What a restricted result may be rebuilt from: classes of these packages,

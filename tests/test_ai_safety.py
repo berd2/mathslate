@@ -175,6 +175,30 @@ class TestStringsThatReachSympifyByAnotherRoad:
         assert "GEMINI_API_KEY" not in environment
         assert "PATH" in environment
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "PGPASSWORD",
+            "GITHUB_PAT",
+            "DATABASE_URL",
+            "REDIS_URL",
+            "AWS_ACCESS_KEY_ID",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+        ],
+    )
+    def test_common_credential_names_are_not_inherited(
+        self, name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Credentials have no universal name shape, so filtering is allowlist-based."""
+        monkeypatch.setenv(name, "must-not-leak")
+        assert name not in _sandbox._child_environment()
+
+    def test_numeric_runtime_settings_are_preserved(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENBLAS_NUM_THREADS", "2")
+        assert _sandbox._child_environment()["OPENBLAS_NUM_THREADS"] == "2"
+
     def test_a_reply_naming_an_arbitrary_callable_is_not_unpickled(self) -> None:
         import io
         import pickle
