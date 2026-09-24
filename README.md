@@ -437,5 +437,6 @@ fails the build.
 - [`docs/design/mathslate_prd_0.3.md`](docs/design/mathslate_prd_0.3.md) — the product requirements
   document, with an implementation-status section kept up to date.
 
-Every `python` example in these documents is executed by the test suite in
-document order, so the documentation cannot drift from the code.
+Every `python` example in the tutorial, the guide and the manual is executed by
+the test suite in document order, so they cannot drift from the code. The PRD
+is a design record and its snippets are not run.
