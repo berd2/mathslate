@@ -1,7 +1,8 @@
-"""The public surface (PRD 6.3) — deliberately tiny.
+"""The public surface (PRD 6.3) — deliberately small.
 
-Eight new public callables, plus SymPy re-exports that MathSlate does not wrap
-at all. Everything else in this package exists to make ``plot()`` correct.
+The callables named in :data:`mathslate.NEW_API`, plus SymPy re-exports that
+MathSlate does not wrap at all. Everything else in this package exists to make
+``plot()`` correct.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from .core.dispatch import PlotPlan, build_plan
 from .core.data import Dataset, load_dataset
 from .core.tables import DEFAULT_ROWS, Table, tabulate
 from .core.sampling import DEFAULT_CONFIG, SamplingConfig
-from .errors import NotYetImplementedError, UnsupportedInputError
+from .errors import UnsupportedInputError
 from .render import axes as _axes
 from .render import plotly_backend
 from .render.options import (
@@ -667,19 +668,6 @@ def _analysis_axis(
         if spec_symbol == symbol:
             return symbol, (lo, hi)
     return symbol, binding.DEFAULT_SPAN
-
-
-# --------------------------------------------------------------------------
-# documented API scheduled for later milestones (PRD 7)
-# --------------------------------------------------------------------------
-
-
-def _later(name: str, milestone: str, what: str) -> NotYetImplementedError:
-    return NotYetImplementedError(
-        f"{name} arrives in MathSlate {milestone} ({what}). "
-        "v0.1 is scoped to 'one graph, done properly': 2D curves, overlaid "
-        "curves, parametric curves, adaptive sampling and show_python()."
-    )
 
 
 def table(

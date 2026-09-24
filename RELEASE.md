@@ -9,7 +9,8 @@ dependencies installed.
 
 1. Start with a clean working tree. Do not include notebook execution output or
    local build folders unless it is intentionally part of the release.
-2. Set the same version in `pyproject.toml` and `mathslate/__init__.py`.
+2. Set `__version__` in `mathslate/__init__.py`; `pyproject.toml` reads it
+   from there.
 3. Run the complete regression suite:
 
    ```bash

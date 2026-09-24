@@ -4,7 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mathslate"
-version = "0.1.5"
+# Read from `mathslate/__init__.py`, the one place the version is written.
+dynamic = ["version"]
 description = "A mathematical workspace that grows with you."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -56,6 +57,9 @@ starter = [
 # `tomli` backports the standard-library `tomllib` (added in 3.11) so the test
 # suite reads pyproject.toml on the 3.10 floor named in `requires-python`.
 dev = ["pytest>=8.0", "pytest-xdist>=3.5", "tomli>=2.0; python_version < '3.11'"]
+
+[tool.hatch.version]
+path = "mathslate/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mathslate"]
