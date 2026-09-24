@@ -1624,7 +1624,7 @@ print([p.name for p in PROVIDERS])
 
 노트북에서는 안내 패널로 시작하는 것이 가장 간단합니다.
 
-```python
+```python requires=ipywidgets
 from mathslate.ai import assistant
 assistant("탄젠트 함수를 한 주기 동안 그려줘")
 ```

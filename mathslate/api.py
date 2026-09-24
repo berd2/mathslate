@@ -17,7 +17,7 @@ from .core import binding
 from .core._failure import SYMBOLIC_FAILURE
 from .core.analysis import Analysis, analyze_expression
 from .core.dispatch import PlotPlan, build_plan
-from .core.data import Dataset, FitResult, load_dataset
+from .core.data import Dataset, load_dataset
 from .core.tables import DEFAULT_ROWS, Table, tabulate
 from .core.sampling import DEFAULT_CONFIG, SamplingConfig
 from .errors import NotYetImplementedError, UnsupportedInputError

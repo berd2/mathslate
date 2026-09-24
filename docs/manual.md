@@ -2037,7 +2037,7 @@ print([p.name for p in PROVIDERS])
 
 For notebooks, the guided panel is the easiest starting point:
 
-```python
+```python requires=ipywidgets
 from mathslate.ai import assistant
 assistant("plot the tangent over one period")
 ```

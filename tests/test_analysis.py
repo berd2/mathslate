@@ -22,7 +22,7 @@ import pytest
 import sympy as sp
 
 import mathslate as ms
-from mathslate import Abs, analyze, cos, exp, floor, log, plot, sin, sqrt, t, tan, x
+from mathslate import Abs, analyze, cos, exp, floor, plot, sin, sqrt, t, tan, x
 from mathslate.core import analysis
 from mathslate.errors import AmbiguousAxisError, UnsupportedInputError
 

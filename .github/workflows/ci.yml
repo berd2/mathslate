@@ -1,8 +1,8 @@
 name: CI
 
-# Fast feedback runs on code changes: one representative Linux/Python pair
-# plus the clean-install acceptance check. The previous four-platform matrix
-# remains available from Actions with the `full_matrix` switch when needed.
+# Every code change runs lint and the full suite on one representative
+# Linux/Python pair, plus the clean-install acceptance check. The four-platform
+# matrix remains available from Actions with the `full_matrix` switch.
 on:
   push:
     branches: [master]
@@ -50,10 +50,22 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
+  lint:
+    name: lint (ruff)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
   test:
     name: tests (Python 3.12, Ubuntu)
-    # `weekly_regression` runs the whole suite on a schedule; repeating the fast
-    # subsets beside it would only spend runner time on the same checks.
+    # `weekly_regression` runs the whole suite on a schedule; repeating it
+    # beside that run would only spend runner time on the same checks.
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
@@ -63,40 +75,11 @@ jobs:
           python-version: "3.12"
       # All three notebook hosts, so acceptance criterion 5 really runs.
       - run: pip install -e ".[dev,jupyter,marimo]" nbclient nbformat ipykernel
-      # Fast, deterministic checks for every source change.  Full notebook,
-      # widget, and multi-platform coverage remains in the manual matrix.
-      - run: >-
-          python -m pytest -q
-          tests/test_acceptance.py
-          tests/test_ai_assistant.py
-          tests/test_ai_credentials.py
-          tests/test_ai_explain.py
-          tests/test_ai_followup.py
-          tests/test_ai_repair_and_fitting.py
-          tests/test_v1_data_and_ai.py
-          tests/test_figure_size.py
-          tests/test_view_and_mesh.py::TestSegmentControlsStayOnOneRow
-
-  documentation:
-    name: docs and tour structure (Python 3.12, Ubuntu)
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: pip install -e ".[dev,jupyter,marimo]" nbclient nbformat ipykernel
-      # Execute manuals and validate generated-tour structure on every source
-      # or documentation change. Full notebook execution is part of release
-      # and weekly regression instead, keeping PR feedback prompt.
-      - run: >-
-          python -m pytest -q
-          tests/test_docs.py
-          tests/test_example_notebook.py
-          tests/test_tour_notebooks.py::TestTheyAreGeneratedAndCurrent
-          tests/test_tour_notebooks.py::TestTheMarimoGraphIsSound
-          tests/test_tour_notebooks.py::TestTheJupyterTwinOpensCleanly
+      # The whole suite on every change, in parallel: the restricted-execution
+      # safety tests and the core sampling/dispatch/codegen tests used to run
+      # only weekly, so a regression there could merge unseen. The
+      # four-platform matrix remains available through `full_matrix`.
+      - run: python -m pytest -q -n auto
 
   weekly_regression:
     name: weekly full regression (Python 3.12, Ubuntu)

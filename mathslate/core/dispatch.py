@@ -34,7 +34,7 @@ from typing import Any, Callable, Final, Iterable, Mapping, Sequence
 import numpy as np
 import sympy as sp
 
-from ..errors import NotYetImplementedError, UnsupportedInputError
+from ..errors import UnsupportedInputError
 from . import binding
 from ._budget import SymbolicTimeout, within_budget
 from ._failure import EVALUATION_FAILURE, SYMBOLIC_FAILURE
@@ -541,7 +541,6 @@ def _plan_curves(
     label: str | None,
 ) -> PlotPlan:
     exprs = _apply_parameters(exprs, parameters, specs)
-    free = binding.free_symbols_of(exprs) - set(parameters) - {s[0] for s in specs}
 
     symbol, span = _resolve_range(exprs, specs, tuple(parameters), periodic_default=polar)
     notes: list[str] = []

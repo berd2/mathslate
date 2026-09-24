@@ -675,7 +675,7 @@ def _two_variable_trace(
 def _two_variable_layout(
     plan: PlotPlan, options: RenderOptions, first: str, second: str
 ) -> list[str]:
-    layout = f"template='plotly_white', showlegend=False"
+    layout = "template='plotly_white', showlegend=False"
     if options.title is not None:
         layout += f", title={options.title!r}"
     lines = [f"fig.update_layout({layout})"]
