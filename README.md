@@ -429,6 +429,9 @@ fails the build.
 
 - **[Tutorial](docs/tutorial.md)** — a one-sitting walkthrough, from your first
   graph to reading real Python. Start here.
+- **[Understanding MathSlate](docs/guide.md)** — the ideas behind the examples:
+  what `plot()` does in five steps, the three rules worth remembering, a
+  task-to-function map, and how to read the common errors.
 - **[Reference manual](docs/manual.md)** — every option, the full dispatch
   contract, the sampling algorithm, and the exact guarantees.
 - [`docs/design/mathslate_prd_0.3.md`](docs/design/mathslate_prd_0.3.md) — the product requirements
