@@ -23,7 +23,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Sequence
 
 
 from ..core._budget import set_budget
@@ -354,11 +354,26 @@ def _child_import_paths() -> tuple[str, ...]:
 
 def _child_command() -> str:
     """Bootstrap the child without exposing import paths during startup."""
-    paths = list(_child_import_paths())
-    return (
-        f"import sys; sys.path[:0] = {paths!r}; "
+    return _path_bootstrap(_child_import_paths()) + (
         "from mathslate.ai.sandbox import _restricted_process_entry as run; "
         "sys.stdout.buffer.write(run(sys.stdin.buffer.read()))"
+    )
+
+
+def _path_bootstrap(paths: Sequence[str]) -> str:
+    """Source that puts ``paths`` the child lacks in front of its ``sys.path``.
+
+    Only the missing ones: a directory the child already has (site-packages in
+    an ordinary install) keeps its place behind the standard library, so a stray
+    backport such as ``typing.py`` there cannot shadow the stdlib module the
+    caller itself is using. Compared by real path, because a venv's ``lib64``
+    link makes one directory look like two.
+    """
+    return (
+        "import os, sys; "
+        "_known = {os.path.realpath(p) for p in sys.path}; "
+        f"sys.path[:0] = [p for p in {list(paths)!r} "
+        "if os.path.realpath(p) not in _known]; del _known; "
     )
 
 

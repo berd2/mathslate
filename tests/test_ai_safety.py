@@ -231,6 +231,32 @@ class TestStringsThatReachSympifyByAnotherRoad:
         assert "PYTHONPATH" not in _sandbox._child_environment()
         assert not marker.exists()
 
+    def test_the_bootstrap_does_not_move_paths_the_child_already_has(
+        self, tmp_path: Path
+    ) -> None:
+        """Site-packages stays behind the stdlib, so a stray backport cannot shadow it."""
+        import json
+        import subprocess
+        import sys
+        import sysconfig
+
+        stdlib = os.path.realpath(sysconfig.get_paths()["stdlib"])
+        site = os.path.realpath(sysconfig.get_paths()["purelib"])
+        source = str(tmp_path)
+        command = _sandbox._path_bootstrap([site, source]) + (
+            "import json; print(json.dumps([os.path.realpath(p) for p in sys.path]))"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", command],
+            env=_sandbox._child_environment(),
+            capture_output=True,
+            check=True,
+        )
+        path = json.loads(completed.stdout)
+        assert path[0] == os.path.realpath(source)
+        assert path.count(site) == 1
+        assert path.index(stdlib) < path.index(site)
+
     def test_a_reply_naming_an_arbitrary_callable_is_not_unpickled(self) -> None:
         import io
         import pickle
