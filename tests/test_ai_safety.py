@@ -7,7 +7,7 @@ import os
 import pytest
 
 from mathslate.ai import Suggestion
-from mathslate.ai import suggest as _suggest
+from mathslate.ai import sandbox as _sandbox
 from mathslate.errors import UnsupportedInputError
 
 
@@ -170,7 +170,7 @@ class TestStringsThatReachSympifyByAnotherRoad:
     ) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-must-not-leak")
         monkeypatch.setenv("GEMINI_API_KEY", "must-not-leak")
-        environment = _suggest._child_environment()
+        environment = _sandbox._child_environment()
         assert "ANTHROPIC_API_KEY" not in environment
         assert "GEMINI_API_KEY" not in environment
         assert "PATH" in environment
@@ -184,7 +184,7 @@ class TestStringsThatReachSympifyByAnotherRoad:
                 return (os.system, ("echo pwned",))
 
         with pytest.raises(pickle.UnpicklingError, match="not allowed"):
-            _suggest._ResultUnpickler(io.BytesIO(pickle.dumps(Evil()))).load()
+            _sandbox._ResultUnpickler(io.BytesIO(pickle.dumps(Evil()))).load()
 
 
 class TestRestrictedDatasetCannotReadTheFilesystem:
@@ -222,7 +222,7 @@ class TestRestrictedExecutionHasATimeBudget:
 
     def test_validation_alone_does_not_catch_an_expression_bomb(self) -> None:
         """Documents the gap the execution budget exists to cover."""
-        _suggest._validate_code("x = 9**9**9")  # does not raise
+        _sandbox._validate_code("x = 9**9**9")  # does not raise
 
     def test_the_real_bomb_is_stopped_and_reported(
         self, monkeypatch: pytest.MonkeyPatch
@@ -233,7 +233,7 @@ class TestRestrictedExecutionHasATimeBudget:
         this a tautology: it proved that a function which raises X propagates
         X, and would have passed against a `run()` with no budget at all.
         """
-        monkeypatch.setattr(_suggest, "_RUN_BUDGET", 3.0)
+        monkeypatch.setattr(_sandbox, "_RUN_BUDGET", 3.0)
         with pytest.raises(UnsupportedInputError, match="execution budget"):
             _suggestion("x = 9**9**99").run()
 
@@ -246,7 +246,7 @@ class TestRestrictedExecutionHasATimeBudget:
         def refuse(*args: object, **kwargs: object) -> None:
             raise OSError("process creation is not permitted here")
 
-        monkeypatch.setattr(_suggest.subprocess, "run", refuse)
+        monkeypatch.setattr(_sandbox.subprocess, "run", refuse)
         with pytest.raises(UnsupportedInputError, match="separate Python process"):
             _suggestion("x = 1").run()
 
