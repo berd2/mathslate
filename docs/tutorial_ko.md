@@ -511,6 +511,7 @@ print(len(page), "sections")
 
 ## 다음으로 볼 것
 
+- [MathSlate 이해하기](guide_ko.md) — 방금 따라 한 동작들이 *왜* 그렇게 되는지, 원리 중심으로 정리한 안내서.
 - [레퍼런스 매뉴얼](manual_ko.md) — 모든 옵션, 전체 디스패치 규칙, 샘플링 알고리즘 및 정확한 보장 항목.
 - [PRD](design/mathslate_prd_0.3.md) — 이 프로젝트가 왜 이런 형태를 갖추게 되었는지, 고의로 지원하지 않는 기능은 무엇인지.
 - `examples/quickstart.py` — 이 튜토리얼의 모든 내용을 한 번에 실행 가능한 파일로 모아둔 것.

@@ -348,6 +348,7 @@ jupyter lab examples/mathslate_tour.ipynb
 ## 문서
 
 - **[튜토리얼](docs/tutorial_ko.md)** — 첫 번째 그래프를 그리는 것부터 실제 Python 코드를 읽는 것까지, 한 번에 훑어보는 가이드입니다. 여기서부터 시작하세요.
+- **[MathSlate 이해하기](docs/guide_ko.md)** — 예제 대신 원리로 읽는 안내서입니다. `plot()` 뒤에서 일어나는 일, 기억할 규칙 세 개, 목적별 길잡이, 오류 메시지 읽는 법을 다룹니다.
 - **[레퍼런스 매뉴얼](docs/manual_ko.md)** — 모든 옵션, 전체 디스패치 규칙, 샘플링 알고리즘 및 정확한 보증 사항을 다룹니다.
 - [`docs/design/mathslate_prd_0.3.md`](docs/design/mathslate_prd_0.3.md) — 제품 요구사항 문서(PRD)로, 최신 상태로 유지되는 구현 상태 섹션이 포함되어 있습니다.
 
