@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -199,17 +200,36 @@ class TestStringsThatReachSympifyByAnotherRoad:
         monkeypatch.setenv("OPENBLAS_NUM_THREADS", "2")
         assert _sandbox._child_environment()["OPENBLAS_NUM_THREADS"] == "2"
 
-    def test_the_child_can_import_the_callers_mathslate(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_the_child_imports_the_callers_packages_after_startup(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A source checkout on PYTHONPATH, or a `sys.path.insert()`, must still run."""
-        monkeypatch.delenv("PYTHONPATH", raising=False)
+        """Source paths work without giving Python a startup-code hook."""
         root = str(_sandbox._mathslate_root())
-        assert _sandbox._child_environment()["PYTHONPATH"].split(os.pathsep) == [root]
+        assert _sandbox._child_import_paths()[0] == root
 
-        monkeypatch.setenv("PYTHONPATH", "/opt/site-extra")
-        parts = _sandbox._child_environment()["PYTHONPATH"].split(os.pathsep)
-        assert parts == [root, "/opt/site-extra"]
+        marker = tmp_path / "sitecustomize-ran"
+        (tmp_path / "sitecustomize.py").write_text(
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('ran', encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        actual_paths = _sandbox._child_import_paths()
+        monkeypatch.setattr(
+            _sandbox,
+            "_child_import_paths",
+            lambda: (str(tmp_path), *actual_paths),
+        )
+        # A caller may have started with this setting, but the restricted child
+        # must not inherit it: Python imports sitecustomize from PYTHONPATH before
+        # the `-c` bootstrap can install the validated runner.
+        monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+        monkeypatch.chdir(tmp_path.parent)
+
+        assigned, _ = _sandbox._run_restricted("result = 1")
+
+        assert assigned["result"] == 1
+        assert "PYTHONPATH" not in _sandbox._child_environment()
+        assert not marker.exists()
 
     def test_a_reply_naming_an_arbitrary_callable_is_not_unpickled(self) -> None:
         import io

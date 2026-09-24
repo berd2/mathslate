@@ -226,10 +226,7 @@ def _assigned_names(code: str) -> tuple[str, ...]:
 def _run_restricted(code: str) -> tuple[dict[str, Any], str]:
     """Run validated code out-of-process and return its assigned values/output."""
     request = pickle.dumps((code, _assigned_names(code)))
-    command = (
-        "from mathslate.ai.sandbox import _restricted_process_entry as run; "
-        "import sys; sys.stdout.buffer.write(run(sys.stdin.buffer.read()))"
-    )
+    command = _child_command()
     try:
         completed = subprocess.run(
             [sys.executable, "-c", command],
@@ -284,7 +281,6 @@ _CHILD_ENV_NAMES: Final[frozenset[str]] = frozenset(
     {
         # Python/process startup on Windows and POSIX.
         "COMSPEC",
-        "LD_LIBRARY_PATH",
         "HOME",
         "HOMEDRIVE",
         "HOMEPATH",
@@ -299,10 +295,6 @@ _CHILD_ENV_NAMES: Final[frozenset[str]] = frozenset(
         "TZ",
         "USERPROFILE",
         "WINDIR",
-        # Where the host's Python finds its packages. A source checkout or an
-        # HPC module may provide MathSlate or its dependencies only this way.
-        "PYTHONHOME",
-        "PYTHONPATH",
         # Deterministic text/hash behaviour explicitly selected by the host.
         "PYTHONHASHSEED",
         "PYTHONIOENCODING",
@@ -329,16 +321,6 @@ def _child_environment() -> dict[str, str]:
             _CHILD_ENV_PREFIXES
         ):
             environment[name] = value
-    # The child must import the MathSlate this process is running, even when it
-    # was found through `sys.path.insert()` in a notebook rather than through
-    # an installation or the environment.
-    root = str(_mathslate_root())
-    inherited = next(
-        (name for name in environment if name.upper() == "PYTHONPATH"), "PYTHONPATH"
-    )
-    existing = environment.get(inherited, "")
-    if root not in existing.split(os.pathsep):
-        environment[inherited] = os.pathsep.join(p for p in (root, existing) if p)
     return environment
 
 
@@ -347,6 +329,37 @@ def _mathslate_root() -> Path:
     import mathslate
 
     return Path(mathslate.__file__).resolve().parents[1]
+
+
+def _child_import_paths() -> tuple[str, ...]:
+    """Roots of the exact core packages already imported by the caller.
+
+    These paths are inserted by :func:`_child_command` *after* Python startup.
+    Putting them in ``PYTHONPATH`` would let a neighbouring ``sitecustomize.py``
+    execute before the restricted runner and its validation exist.
+    """
+    import importlib
+
+    roots: list[str] = []
+    for name in ("mathslate", "sympy", "numpy", "plotly", "mpmath"):
+        module = importlib.import_module(name)
+        filename = getattr(module, "__file__", None)
+        if filename is None:
+            continue
+        root = str(Path(filename).resolve().parents[1])
+        if root not in roots:
+            roots.append(root)
+    return tuple(roots)
+
+
+def _child_command() -> str:
+    """Bootstrap the child without exposing import paths during startup."""
+    paths = list(_child_import_paths())
+    return (
+        f"import sys; sys.path[:0] = {paths!r}; "
+        "from mathslate.ai.sandbox import _restricted_process_entry as run; "
+        "sys.stdout.buffer.write(run(sys.stdin.buffer.read()))"
+    )
 
 
 #: What a restricted result may be rebuilt from: classes of these packages,
