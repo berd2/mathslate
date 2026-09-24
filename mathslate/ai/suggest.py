@@ -17,6 +17,7 @@ import ast
 import contextlib
 import io
 import json
+import os
 import pickle
 import re
 import subprocess
@@ -152,8 +153,27 @@ _MAX_SAFE_AST_NODES = 400
 #: positional arguments, and ``sympify`` on a string ``eval``\ s that string as
 #: Python — ``solve("__import__('os').system(...)")`` is arbitrary code, not an
 #: equation. So a string literal is refused everywhere except the positions
-#: these three make safe (and keyword values, which nothing sympifies).
+#: these three make safe and the keywords :data:`_STRING_KEYWORDS` names.
 _STRING_CALLABLES: frozenset[str] = frozenset({"symbols", "Symbol", "dataset"})
+#: The keyword arguments that may carry a string, per callable (or method).
+#: Nothing else may: a keyword reaches ``sympify`` as readily as a positional
+#: argument does — ``series(x, x, x0="...")`` and ``limit(x, x, z0="...")``
+#: both evaluate their string — so the only safe policy is to name the keywords
+#: known to read a string as a label, a choice or a name, and refuse the rest.
+_STRING_KEYWORDS: Final[dict[str, frozenset[str]]] = {
+    "plot": frozenset({"kind", "label", "title", "yscale"}),
+    "polar": frozenset({"kind", "label", "title", "yscale"}),
+    "animate": frozenset({"kind", "label", "title", "yscale"}),
+    "table": frozenset({"label"}),
+    "slider": frozenset({"name", "label"}),
+    "limit": frozenset({"dir"}),
+    "series": frozenset({"dir"}),
+    "dataset": frozenset({"columns", "encoding"}),
+}
+#: The same, for methods reached by attribute (``data.fit(model, x="t")``).
+_METHOD_STRING_KEYWORDS: Final[dict[str, frozenset[str]]] = {
+    "fit": frozenset({"x", "y"}),
+}
 #: A name ``symbols()``/``Symbol()`` will accept — belt and suspenders, since a
 #: name is never evaluated, but it keeps even that string to identifier shapes.
 _SYMBOL_NAME = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*(\s*[ ,:]\s*[A-Za-z_][A-Za-z0-9_]*)*\s*$")
@@ -480,9 +500,64 @@ def _safe_exports() -> dict[str, Any]:
     import mathslate
 
     constants = {"E", "I", "oo", "pi", "x", "y", "z", "t", "n", "k", "theta"}
-    exports = {name: getattr(mathslate, name) for name in _SAFE_CALLS | constants}
-    exports["dataset"] = _safe_dataset
+    exports: dict[str, Any] = {name: getattr(mathslate, name) for name in constants}
+    for name in _SAFE_CALLS:
+        target = _safe_dataset if name == "dataset" else getattr(mathslate, name)
+        exports[name] = _StringGuard(name, target)
     return exports
+
+
+class _StringGuard:
+    """An allowlisted callable that refuses strings it would evaluate as code.
+
+    :func:`_validate_code` can only see string *literals*. A string made at run
+    time — a dataset's column names, a result's ``.text()`` — is a ``Name`` or
+    an ``Attribute`` in the tree and passes it, yet ``sympify`` evaluates it
+    just the same. This checks the values themselves, at the call, so the
+    policy no longer depends on the analysis seeing every string's origin.
+    """
+
+    def __init__(self, name: str, target: Any) -> None:
+        self._name = name
+        self._target = target
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if self._name in _STRING_CALLABLES:
+            positional_ok = self._name == "dataset" or all(
+                not isinstance(a, str) or _SYMBOL_NAME.match(a) for a in args
+            )
+        else:
+            positional_ok = not any(_holds_string(a) for a in args)
+        allowed = _STRING_KEYWORDS.get(self._name, frozenset())
+        keywords_ok = all(
+            key in allowed or not _holds_string(value) for key, value in kwargs.items()
+        )
+        if not (positional_ok and keywords_ok):
+            raise UnsupportedInputError(
+                f"{self._name}() was given a string where SymPy would evaluate "
+                "it as code; restricted execution passes expressions, not text."
+            )
+        return self._target(*args, **kwargs)
+
+    def __repr__(self) -> str:
+        return repr(self._target)
+
+
+def _holds_string(value: Any, depth: int = 0) -> bool:
+    """Whether ``value`` is, or plainly contains, a ``str``."""
+    if isinstance(value, str):
+        return True
+    if depth > 8:
+        # Deeper than any legitimate argument; refuse rather than recurse.
+        return True
+    if isinstance(value, dict):
+        return any(
+            _holds_string(k, depth + 1) or _holds_string(v, depth + 1)
+            for k, v in value.items()
+        )
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_holds_string(item, depth + 1) for item in value)
+    return False
 
 
 def _safe_scope() -> dict[str, Any]:
@@ -525,6 +600,7 @@ def _run_restricted(code: str) -> tuple[dict[str, Any], str]:
             stderr=subprocess.PIPE,
             timeout=_RUN_BUDGET,
             check=False,
+            env=_child_environment(),
         )
     except subprocess.TimeoutExpired as error:
         raise UnsupportedInputError(
@@ -550,7 +626,7 @@ def _run_restricted(code: str) -> tuple[dict[str, Any], str]:
             + (f": {detail}" if detail else ".")
         )
     try:
-        status, payload = pickle.loads(completed.stdout)
+        status, payload = _ResultUnpickler(io.BytesIO(completed.stdout)).load()
     except (EOFError, pickle.UnpicklingError, ValueError, TypeError) as error:
         raise UnsupportedInputError(
             "restricted AI execution returned an unreadable result."
@@ -558,6 +634,62 @@ def _run_restricted(code: str) -> tuple[dict[str, Any], str]:
     if status == "error":
         raise UnsupportedInputError(f"AI suggestion failed: {payload}")
     return payload
+
+
+#: Environment variables withheld from the restricted process, by name shape.
+#: Nothing it legitimately runs needs a credential, and a policy bypass should
+#: not find the provider key one ``os.environ`` away.
+_SECRET_ENV_NAME = re.compile(
+    r"(?i)(^|_)(API_?KEY|KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTH)(_|$)"
+)
+
+
+def _child_environment() -> dict[str, str]:
+    """The caller's environment without anything that looks like a credential."""
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if not _SECRET_ENV_NAME.search(name)
+    }
+
+
+#: What a restricted result may be rebuilt from: classes of these packages,
+#: and the two reconstructors their pickles are known to call. Any other
+#: global — ``os.system``, ``builtins.eval``, ``sympy.sympify`` — is refused.
+_RESULT_MODULES: Final[tuple[str, ...]] = ("mathslate", "sympy", "numpy", "mpmath")
+_RESULT_BUILTINS: Final[frozenset[str]] = frozenset(
+    {"complex", "set", "frozenset", "slice", "range", "bytearray", "object"}
+)
+_RESULT_FUNCTIONS: Final[frozenset[tuple[str, str]]] = frozenset(
+    {
+        ("mathslate.result", "_rebuild_plot_result"),
+        ("numpy._core.multiarray", "_reconstruct"),
+        ("numpy.core.multiarray", "_reconstruct"),
+    }
+)
+
+
+class _ResultUnpickler(pickle.Unpickler):
+    """Unpickle a restricted process's reply without trusting its globals.
+
+    Hardening, not isolation: the child runs as the same user, so code running
+    there can already act as that user. This only stops a reply from naming an
+    arbitrary callable for the notebook's own process to invoke.
+    """
+
+    def find_class(self, module: str, name: str) -> Any:
+        if module == "builtins":
+            if name in _RESULT_BUILTINS:
+                return super().find_class(module, name)
+        elif (module, name) in _RESULT_FUNCTIONS:
+            return super().find_class(module, name)
+        elif module.split(".")[0] in _RESULT_MODULES:
+            found = super().find_class(module, name)
+            if isinstance(found, type):
+                return found
+        raise pickle.UnpicklingError(
+            f"restricted result refers to {module}.{name}, which is not allowed."
+        )
 
 
 def _restricted_process_entry(request: bytes) -> bytes:
@@ -706,10 +838,11 @@ def _validate_code(code: str) -> None:
 def _sympify_safe_string_literals(tree: ast.AST) -> frozenset[int]:
     """The ``id()``\\ s of string literals that cannot reach ``sympify``.
 
-    A string is safe in exactly two shapes: as a keyword-argument value (no
-    allowlisted callable sympifies one), or as a *literal* inside the positional
-    arguments of the three callables that read strings as names or data rather
-    than as expressions (:data:`_STRING_CALLABLES`). "Literal" is the load-
+    A string is safe in exactly two shapes: as the value of a keyword named in
+    :data:`_STRING_KEYWORDS` / :data:`_METHOD_STRING_KEYWORDS`, or as a
+    *literal* inside the positional arguments of the three callables that read
+    strings as names or data rather than as expressions
+    (:data:`_STRING_CALLABLES`). "Literal" is the load-
     bearing word: ``dataset({"x": [1, 2]})`` is safe, but the ``"..."`` in
     ``dataset({"x": solve("...")})`` sits inside a *call*, would be sympified
     there, and must stay refused — so the walk into a container stops at the
@@ -737,9 +870,12 @@ def _sympify_safe_string_literals(tree: ast.AST) -> frozenset[int]:
         # string buried inside it stays outside `safe` and is refused.
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.keyword) and _is_str(node.value):
-            safe.add(id(node.value))
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        if not isinstance(node, ast.Call):
+            continue
+        for keyword in node.keywords:
+            if keyword.arg in _string_keywords(node.func):
+                _allow_literal(keyword.value)
+        if isinstance(node.func, ast.Name):
             if node.func.id == "dataset":
                 for arg in node.args:
                     _allow_literal(arg)
@@ -748,6 +884,15 @@ def _sympify_safe_string_literals(tree: ast.AST) -> frozenset[int]:
                     if _is_str(arg) and _SYMBOL_NAME.match(arg.value):
                         safe.add(id(arg))
     return frozenset(safe)
+
+
+def _string_keywords(func: ast.expr) -> frozenset[str]:
+    """The keywords of this call that may carry a string literal."""
+    if isinstance(func, ast.Name):
+        return _STRING_KEYWORDS.get(func.id, frozenset())
+    if isinstance(func, ast.Attribute):
+        return _METHOD_STRING_KEYWORDS.get(func.attr, frozenset())
+    return frozenset()
 
 
 def _safe_assignment_target(target: ast.expr) -> bool:

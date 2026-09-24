@@ -87,8 +87,13 @@ class TestRestrictedExecution:
             "result = Symbol('theta')",
             # dataset() reads string dict keys as column names, never sympifies.
             "result = dataset({'x': [0, 1, 2], 'y': [1.0, 3.0, 5.0]})",
-            # keyword values are never sympified.
+            # the keywords named in _STRING_KEYWORDS read a label or a choice.
             "result = plot(sin(x), title='My Plot', kind='scatter', verbose=False)",
+            "result = limit(1/x, x, 0, dir='+')",
+            "a = slider(1, 3, name='a', label='amplitude')",
+            "d = dataset({'t': [0, 1, 2], 'v': [1, 3, 5]})\n"
+            "a, b = symbols('a b')\n"
+            "result = d.fit(a*t + b, x='t', y='v')",
         ],
     )
     def test_strings_that_cannot_reach_sympify_are_allowed(self, code: str) -> None:
@@ -121,6 +126,65 @@ class TestRestrictedExecution:
     def test_unsafe_execution_is_an_explicit_escape_hatch(self) -> None:
         scope = _suggestion("import math\nresult = math.sqrt(9)").run(unsafe=True)
         assert scope["result"] == 3.0
+
+
+class TestStringsThatReachSympifyByAnotherRoad:
+    """A string need not be a positional literal to be evaluated as code."""
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            # keyword arguments are sympified too: these ran their string
+            "series(x, x, x0=\"__import__('os').getpid()\")",
+            "limit(x, x, z0=\"__import__('os').getpid()\")",
+            "solve(x, x, domain=\"__import__('os').getpid()\")",
+        ],
+    )
+    def test_a_string_keyword_outside_the_allowlist_is_refused(self, code: str) -> None:
+        with pytest.raises(UnsupportedInputError, match="evaluate"):
+            _suggestion(code).validate()
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "solve(d.names)",
+            "plot(d.names[0])",
+            "sin(d.names[0])",
+            "Matrix([d.names])",
+            "a = slider(1, 3)\nresult = a + d.names[0]",
+        ],
+    )
+    def test_a_string_made_at_run_time_is_not_evaluated(
+        self, expression: str, tmp_path: "os.PathLike[str]"
+    ) -> None:
+        """Column names are strings the AST never sees as literals."""
+        marker = os.path.join(os.fspath(tmp_path), "ran")
+        payload = f"__import__('pathlib').Path({marker!r}).write_text('x')"
+        code = f"d = dataset({{{payload!r}: [1, 2]}})\n{expression}"
+        with pytest.raises(UnsupportedInputError):
+            _suggestion(code).run(show_code=False)
+        assert not os.path.exists(marker)
+
+    def test_the_restricted_process_does_not_inherit_provider_keys(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-must-not-leak")
+        monkeypatch.setenv("GEMINI_API_KEY", "must-not-leak")
+        environment = _suggest._child_environment()
+        assert "ANTHROPIC_API_KEY" not in environment
+        assert "GEMINI_API_KEY" not in environment
+        assert "PATH" in environment
+
+    def test_a_reply_naming_an_arbitrary_callable_is_not_unpickled(self) -> None:
+        import io
+        import pickle
+
+        class Evil:
+            def __reduce__(self) -> tuple[object, tuple[str]]:
+                return (os.system, ("echo pwned",))
+
+        with pytest.raises(pickle.UnpicklingError, match="not allowed"):
+            _suggest._ResultUnpickler(io.BytesIO(pickle.dumps(Evil()))).load()
 
 
 class TestRestrictedDatasetCannotReadTheFilesystem:
