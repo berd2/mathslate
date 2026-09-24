@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
 from mathslate.ai import Suggestion
-from mathslate.ai import suggest as _suggest
+from mathslate.ai import sandbox as _sandbox
 from mathslate.errors import UnsupportedInputError
 
 
@@ -87,8 +88,13 @@ class TestRestrictedExecution:
             "result = Symbol('theta')",
             # dataset() reads string dict keys as column names, never sympifies.
             "result = dataset({'x': [0, 1, 2], 'y': [1.0, 3.0, 5.0]})",
-            # keyword values are never sympified.
+            # the keywords named in _STRING_KEYWORDS read a label or a choice.
             "result = plot(sin(x), title='My Plot', kind='scatter', verbose=False)",
+            "result = limit(1/x, x, 0, dir='+')",
+            "a = slider(1, 3, name='a', label='amplitude')",
+            "d = dataset({'t': [0, 1, 2], 'v': [1, 3, 5]})\n"
+            "a, b = symbols('a b')\n"
+            "result = d.fit(a*t + b, x='t', y='v')",
         ],
     )
     def test_strings_that_cannot_reach_sympify_are_allowed(self, code: str) -> None:
@@ -121,6 +127,146 @@ class TestRestrictedExecution:
     def test_unsafe_execution_is_an_explicit_escape_hatch(self) -> None:
         scope = _suggestion("import math\nresult = math.sqrt(9)").run(unsafe=True)
         assert scope["result"] == 3.0
+
+
+class TestStringsThatReachSympifyByAnotherRoad:
+    """A string need not be a positional literal to be evaluated as code."""
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            # keyword arguments are sympified too: these ran their string
+            "series(x, x, x0=\"__import__('os').getpid()\")",
+            "limit(x, x, z0=\"__import__('os').getpid()\")",
+            "solve(x, x, domain=\"__import__('os').getpid()\")",
+        ],
+    )
+    def test_a_string_keyword_outside_the_allowlist_is_refused(self, code: str) -> None:
+        with pytest.raises(UnsupportedInputError, match="evaluate"):
+            _suggestion(code).validate()
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "solve(d.names)",
+            "plot(d.names[0])",
+            "sin(d.names[0])",
+            "Matrix([d.names])",
+            "a = slider(1, 3)\nresult = a + d.names[0]",
+        ],
+    )
+    def test_a_string_made_at_run_time_is_not_evaluated(
+        self, expression: str, tmp_path: "os.PathLike[str]"
+    ) -> None:
+        """Column names are strings the AST never sees as literals."""
+        marker = os.path.join(os.fspath(tmp_path), "ran")
+        payload = f"__import__('pathlib').Path({marker!r}).write_text('x')"
+        code = f"d = dataset({{{payload!r}: [1, 2]}})\n{expression}"
+        with pytest.raises(UnsupportedInputError):
+            _suggestion(code).run(show_code=False)
+        assert not os.path.exists(marker)
+
+    def test_the_restricted_process_does_not_inherit_provider_keys(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-must-not-leak")
+        monkeypatch.setenv("GEMINI_API_KEY", "must-not-leak")
+        environment = _sandbox._child_environment()
+        assert "ANTHROPIC_API_KEY" not in environment
+        assert "GEMINI_API_KEY" not in environment
+        assert "PATH" in environment
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "PGPASSWORD",
+            "GITHUB_PAT",
+            "DATABASE_URL",
+            "REDIS_URL",
+            "AWS_ACCESS_KEY_ID",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+        ],
+    )
+    def test_common_credential_names_are_not_inherited(
+        self, name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Credentials have no universal name shape, so filtering is allowlist-based."""
+        monkeypatch.setenv(name, "must-not-leak")
+        assert name not in _sandbox._child_environment()
+
+    def test_numeric_runtime_settings_are_preserved(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENBLAS_NUM_THREADS", "2")
+        assert _sandbox._child_environment()["OPENBLAS_NUM_THREADS"] == "2"
+
+    def test_the_child_imports_the_callers_packages_after_startup(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Source paths work without giving Python a startup-code hook."""
+        root = str(_sandbox._mathslate_root())
+        assert _sandbox._child_import_paths()[0] == root
+
+        marker = tmp_path / "sitecustomize-ran"
+        (tmp_path / "sitecustomize.py").write_text(
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('ran', encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        actual_paths = _sandbox._child_import_paths()
+        monkeypatch.setattr(
+            _sandbox,
+            "_child_import_paths",
+            lambda: (str(tmp_path), *actual_paths),
+        )
+        # A caller may have started with this setting, but the restricted child
+        # must not inherit it: Python imports sitecustomize from PYTHONPATH before
+        # the `-c` bootstrap can install the validated runner.
+        monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+        monkeypatch.chdir(tmp_path.parent)
+
+        assigned, _ = _sandbox._run_restricted("result = 1")
+
+        assert assigned["result"] == 1
+        assert "PYTHONPATH" not in _sandbox._child_environment()
+        assert not marker.exists()
+
+    def test_the_bootstrap_does_not_move_paths_the_child_already_has(
+        self, tmp_path: Path
+    ) -> None:
+        """Site-packages stays behind the stdlib, so a stray backport cannot shadow it."""
+        import json
+        import subprocess
+        import sys
+        import sysconfig
+
+        stdlib = os.path.realpath(sysconfig.get_paths()["stdlib"])
+        site = os.path.realpath(sysconfig.get_paths()["purelib"])
+        source = str(tmp_path)
+        command = _sandbox._path_bootstrap([site, source]) + (
+            "import json; print(json.dumps([os.path.realpath(p) for p in sys.path]))"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", command],
+            env=_sandbox._child_environment(),
+            capture_output=True,
+            check=True,
+        )
+        path = json.loads(completed.stdout)
+        assert path[0] == os.path.realpath(source)
+        assert path.count(site) == 1
+        assert path.index(stdlib) < path.index(site)
+
+    def test_a_reply_naming_an_arbitrary_callable_is_not_unpickled(self) -> None:
+        import io
+        import pickle
+
+        class Evil:
+            def __reduce__(self) -> tuple[object, tuple[str]]:
+                return (os.system, ("echo pwned",))
+
+        with pytest.raises(pickle.UnpicklingError, match="not allowed"):
+            _sandbox._ResultUnpickler(io.BytesIO(pickle.dumps(Evil()))).load()
 
 
 class TestRestrictedDatasetCannotReadTheFilesystem:
@@ -158,7 +304,7 @@ class TestRestrictedExecutionHasATimeBudget:
 
     def test_validation_alone_does_not_catch_an_expression_bomb(self) -> None:
         """Documents the gap the execution budget exists to cover."""
-        _suggest._validate_code("x = 9**9**9")  # does not raise
+        _sandbox._validate_code("x = 9**9**9")  # does not raise
 
     def test_the_real_bomb_is_stopped_and_reported(
         self, monkeypatch: pytest.MonkeyPatch
@@ -169,7 +315,7 @@ class TestRestrictedExecutionHasATimeBudget:
         this a tautology: it proved that a function which raises X propagates
         X, and would have passed against a `run()` with no budget at all.
         """
-        monkeypatch.setattr(_suggest, "_RUN_BUDGET", 3.0)
+        monkeypatch.setattr(_sandbox, "_RUN_BUDGET", 3.0)
         with pytest.raises(UnsupportedInputError, match="execution budget"):
             _suggestion("x = 9**9**99").run()
 
@@ -182,7 +328,7 @@ class TestRestrictedExecutionHasATimeBudget:
         def refuse(*args: object, **kwargs: object) -> None:
             raise OSError("process creation is not permitted here")
 
-        monkeypatch.setattr(_suggest.subprocess, "run", refuse)
+        monkeypatch.setattr(_sandbox.subprocess, "run", refuse)
         with pytest.raises(UnsupportedInputError, match="separate Python process"):
             _suggestion("x = 1").run()
 

@@ -24,7 +24,6 @@ import numpy as np
 import pytest
 import sympy as sp
 
-import mathslate as ms
 from mathslate import cos, plot, sin, sqrt, t, x
 from mathslate.codegen import _fmt
 from mathslate.core import binding

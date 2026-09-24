@@ -226,8 +226,8 @@ class Dataset:
                 f"the independent and dependent columns are both {x_name!r}, so "
                 "the fit would just recover the identity. "
                 + (
-                    f"This dataset has only one column; give fit() two, or name "
-                    f"them: fit(model, x='...', y='...')."
+                    "This dataset has only one column; give fit() two, or name "
+                    "them: fit(model, x='...', y='...')."
                     if len(names) == 1
                     else f"Name them: fit(model, x=..., y=...) from {', '.join(names)}."
                 )

@@ -7,7 +7,7 @@ import pytest
 import sympy as sp
 
 from mathslate import Eq, cos, plot, polar, sin, t, theta, x, y
-from mathslate.errors import NotYetImplementedError, UnsupportedInputError
+from mathslate.errors import UnsupportedInputError
 
 
 class TestTheOneRule:

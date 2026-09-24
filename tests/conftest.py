@@ -48,17 +48,26 @@ def _isolate_sliders() -> Iterator[None]:
     done so once: a slider in the manual's examples reached
     `tests/test_input_validation.py` and changed what that module observed.
     """
+    from mathslate.core import binding
     from mathslate.ui import interact
+
+    def reset() -> None:
+        interact.release_all()
+        # `release_all()` only unbinds sliders. A test that calls
+        # `binding.bind_parameter()` directly leaves a binding no slider owns,
+        # which turned `a` into a parameter for whichever test ran next on the
+        # same worker.
+        binding._BOUND.clear()
 
     # Both sides, not just teardown. Teardown alone leaves the *first* test
     # exposed to anything module-level collection created, and leaves every
     # test exposed if an earlier autouse fixture raises before this one's
     # teardown is reached.
-    interact.release_all()
+    reset()
     try:
         yield
     finally:
-        interact.release_all()
+        reset()
 
 
 @pytest.fixture()

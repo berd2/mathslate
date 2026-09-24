@@ -23,7 +23,7 @@ describe it, tabulate it.
 string is evaluated as code — the hole this package had until string literals
 were refused in restricted validation. Nothing here interpolates a caller's text
 into an expression and hopes: every request is assembled into MathSlate source,
-put through the same :func:`~mathslate.ai.suggest._validate_code` allowlist as a
+put through the same :func:`~mathslate.ai.sandbox._validate_code` allowlist as a
 generated suggestion, and run in the same isolated process under the same
 wall-clock budget. A tool call is not a more trusted path than a suggestion, and
 does not get one.
@@ -38,7 +38,7 @@ from typing import Any, Callable, Mapping, Sequence
 import sympy as sp
 
 from ..errors import MathSlateError, UnsupportedInputError
-from .suggest import _run_restricted, _validate_code
+from .sandbox import _run_restricted, _validate_code
 
 __all__ = ["Tool", "TOOLS", "call", "tool_schemas", "tool_names"]
 

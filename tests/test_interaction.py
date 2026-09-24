@@ -23,8 +23,7 @@ import numpy as np
 import pytest
 import sympy as sp
 
-import mathslate as ms
-from mathslate import animate, cos, plot, sin, slider, t, x
+from mathslate import animate, plot, sin, slider, t, x
 from mathslate.core import binding
 from mathslate.errors import UnsupportedInputError
 from mathslate.ui.interact import DEFAULT_STEPS, Slider

@@ -9,12 +9,18 @@ it. A block that is *meant* to fail says so in its fence::
     ```
 
 Blocks that are illustrative rather than runnable use a non-``python`` fence
-(``text``, ``console``, ``bash``).
+(``text``, ``console``, ``bash``). A block that needs an optional extra names
+the module, and is skipped where it is not installed::
+
+    ```python requires=ipywidgets
+    assistant("plot the tangent")
+    ```
 """
 
 from __future__ import annotations
 
 import builtins
+import importlib.util
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +42,7 @@ class Block:
     line: int
     code: str
     raises: str | None
+    requires: str | None = None
 
     @property
     def label(self) -> str:
@@ -48,17 +55,20 @@ def _blocks(path: Path) -> Iterator[Block]:
         info = match.group("info").strip()
         if not info.split(" ")[0] == "python":
             continue
-        raises = None
+        raises = requires = None
         for token in info.split(" ")[1:]:
             key, _, value = token.partition("=")
             if key == "raises":
                 raises = value
+            elif key == "requires":
+                requires = value
         yield Block(
             document=path.name,
             index=index,
             line=text[: match.start()].count("\n") + 1,
             code=match.group("body"),
             raises=raises,
+            requires=requires,
         )
 
 
@@ -83,7 +93,16 @@ def test_every_example_runs(path: Path, headless_show: list[Any]) -> None:
         mathslate.set_verbose(True)
 
 
+def _installed(module: str) -> bool:
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def _run(block: Block, namespace: dict[str, Any]) -> None:
+    if block.requires and not _installed(block.requires):
+        return  # an optional extra this environment does not have
     compiled = compile(block.code, f"<{block.label}>", "exec")
     if block.raises is None:
         try:

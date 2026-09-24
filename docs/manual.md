@@ -2037,7 +2037,7 @@ print([p.name for p in PROVIDERS])
 
 For notebooks, the guided panel is the easiest starting point:
 
-```python
+```python requires=ipywidgets
 from mathslate.ai import assistant
 assistant("plot the tangent over one period")
 ```
@@ -2058,8 +2058,10 @@ it by construction:
 - **It returns code; it does not run it.** `ask(...)` gives you a `Suggestion`
   you read. `Suggestion.run()` is explicit and validates an allowlisted,
   expression-oriented subset before running with restricted builtins. Imports,
-  file/network access, dunder inspection, loops and indirect calls are refused.
-  `run(unsafe=True)` restores unrestricted Python and is only for code you trust.
+  file/network access, dunder inspection, loops and indirect calls are refused,
+  and so is any string SymPy would evaluate as code — whether it is written
+  as a literal or produced while the code runs. The isolated process gets no
+  credential environment variables. `run(unsafe=True)` restores unrestricted Python and is only for code you trust.
 - **No provider is bundled.** Claude, OpenAI and Gemini are supported; install
   one and set its key. The key may be an environment variable or an explicit
   argument; an explicit key does not also need to be copied into the
@@ -2450,6 +2452,6 @@ Plotly is confined to one file so that swapping the backend later stays cheap.
 ## See also
 
 - [Tutorial](tutorial.md) — the guided introduction.
-- [PRD](../mathslate_prd_0.3.md) — the design rationale, the non-goals, and
+- [PRD](design/mathslate_prd_0.3.md) — the design rationale, the non-goals, and
   the implementation status with acceptance-criteria evidence.
 - [`README`](../README.md) — the short version.

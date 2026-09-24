@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import itertools
 import math
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import sympy as sp
 
@@ -159,35 +159,37 @@ class Slider:
     # SymPy handles `a * sin(x)` by sympifying us through `_sympy_`. Plain
     # numbers cannot: `a * 2` asks int, int declines, and Python gives up. So
     # the arithmetic that a reader will actually type is delegated explicitly.
+    # Strictly, as SymPy's own operators do: a non-strict `sympify` evaluates a
+    # *string* as Python, so `a + some_text` would run that text as code.
     def __mul__(self, other: Any) -> sp.Expr:
-        return self.symbol * sp.sympify(other)
+        return _operand(other, lambda o: self.symbol * o)
 
     def __rmul__(self, other: Any) -> sp.Expr:
-        return sp.sympify(other) * self.symbol
+        return _operand(other, lambda o: o * self.symbol)
 
     def __add__(self, other: Any) -> sp.Expr:
-        return self.symbol + sp.sympify(other)
+        return _operand(other, lambda o: self.symbol + o)
 
     def __radd__(self, other: Any) -> sp.Expr:
-        return sp.sympify(other) + self.symbol
+        return _operand(other, lambda o: o + self.symbol)
 
     def __sub__(self, other: Any) -> sp.Expr:
-        return self.symbol - sp.sympify(other)
+        return _operand(other, lambda o: self.symbol - o)
 
     def __rsub__(self, other: Any) -> sp.Expr:
-        return sp.sympify(other) - self.symbol
+        return _operand(other, lambda o: o - self.symbol)
 
     def __truediv__(self, other: Any) -> sp.Expr:
-        return self.symbol / sp.sympify(other)
+        return _operand(other, lambda o: self.symbol / o)
 
     def __rtruediv__(self, other: Any) -> sp.Expr:
-        return sp.sympify(other) / self.symbol
+        return _operand(other, lambda o: o / self.symbol)
 
     def __pow__(self, other: Any) -> sp.Expr:
-        return self.symbol ** sp.sympify(other)
+        return _operand(other, lambda o: self.symbol ** o)
 
     def __rpow__(self, other: Any) -> sp.Expr:
-        return sp.sympify(other) ** self.symbol
+        return _operand(other, lambda o: o ** self.symbol)
 
     def __neg__(self) -> sp.Expr:
         return -self.symbol
@@ -301,6 +303,15 @@ def release_all() -> None:
     """
     for instance in list(_REGISTRY.values()):
         release(instance)
+
+
+def _operand(other: Any, combine: Callable[[sp.Basic], sp.Expr]) -> Any:
+    """``combine`` applied to ``other`` sympified strictly, else NotImplemented."""
+    try:
+        converted = sp.sympify(other, strict=True)
+    except sp.SympifyError:
+        return NotImplemented
+    return combine(converted)
 
 
 def sliders_in(*exprs: sp.Expr) -> tuple[Slider, ...]:

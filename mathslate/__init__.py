@@ -3,9 +3,9 @@
     from mathslate import *
     plot(sin(x)/x)
 
-Everything symbolic is SymPy's, unwrapped and re-exported. MathSlate adds
-eight callables and one guarantee: the graph is right, and you can always ask
-it what the plain Python was.
+Everything symbolic is SymPy's, unwrapped and re-exported. MathSlate adds a
+small set of callables (:data:`NEW_API`) and one guarantee: the graph is right,
+and you can always ask it what the plain Python was.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ from .core.data import Dataset
 from .core.tables import Table
 from .result import PlotResult
 
-__version__: str = "0.1.5"
+__version__ = "0.1.6"
 
 # --- predefined symbols (PRD 6.3) -----------------------------------------
 # Open decision 3: `import *` is permitted so that these exist, but

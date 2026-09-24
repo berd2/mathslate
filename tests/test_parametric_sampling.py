@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mathslate import cos, floor, plot, polar, sin, sqrt, t, tan, theta, x
+from mathslate import cos, floor, plot, polar, sin, sqrt, t, tan, theta
 from mathslate.core import sampling
 from tests.helpers import crossing_points
 

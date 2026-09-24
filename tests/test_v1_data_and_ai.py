@@ -26,7 +26,6 @@ import plotly.graph_objects as go
 import pytest
 import sympy as sp
 
-import mathslate as ms
 from mathslate import Matrix, analyze, dataset, exp, plot, sin, table, x
 from mathslate.classroom import Worksheet, worksheet
 from mathslate.errors import UnsupportedInputError

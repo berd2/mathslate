@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import sys
 import types
-import warnings
 from typing import Any
 
 import numpy as np
@@ -28,7 +27,7 @@ import pytest
 import sympy as sp
 
 from mathslate import (
-    cos, exp, plot, polar, sin, slider, sqrt, t, tan, theta, x, y, z,
+    cos, exp, plot, polar, sin, slider, sqrt, t, tan, theta, x, y,
 )
 from mathslate.errors import UnsupportedInputError
 from mathslate.ui import release_all

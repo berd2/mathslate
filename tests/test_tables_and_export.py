@@ -19,9 +19,8 @@ import numpy as np
 import pytest
 import sympy as sp
 
-import mathslate as ms
-from mathslate import Eq, cos, plot, sin, slider, sqrt, t, table, x, y
-from mathslate.core.tables import DEFAULT_ROWS, Table
+from mathslate import cos, plot, sin, slider, sqrt, t, table, x, y
+from mathslate.core.tables import DEFAULT_ROWS
 from mathslate.errors import UnsupportedInputError
 from mathslate.ui import interact
 

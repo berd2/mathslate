@@ -17,7 +17,7 @@ curve | x ∈ [-10, 10] | 411 samples | 1 discontinuity handled
   · singularities at x = 0
 ```
 
-![plot-2D](plot-2D.png)
+![plot-2D](https://raw.githubusercontent.com/berd2/mathslate/master/docs/images/plot-2D.png)
 
 That is the whole first lesson. No `symbols`, no `lambdify`, no `linspace`, no
 `figure`, no `show`. When you are ready for those, ask:
@@ -144,7 +144,7 @@ plot([sin(x), cos(x)])     # two curves, overlaid
 plot((sin(t), cos(t)))     # one parametric curve
 ```
 
-![plot-3D](plot-3D.png)
+![plot-3D](https://raw.githubusercontent.com/berd2/mathslate/master/docs/images/plot-3D.png)
 
 Everything else follows the dispatch contract:
 
@@ -429,9 +429,12 @@ fails the build.
 
 - **[Tutorial](docs/tutorial.md)** — a one-sitting walkthrough, from your first
   graph to reading real Python. Start here.
+- **[Understanding MathSlate](docs/guide.md)** — the ideas behind the examples:
+  what `plot()` does in five steps, the three rules worth remembering, a
+  task-to-function map, and how to read the common errors.
 - **[Reference manual](docs/manual.md)** — every option, the full dispatch
   contract, the sampling algorithm, and the exact guarantees.
-- [`mathslate_prd_0.3.md`](mathslate_prd_0.3.md) — the product requirements
+- [`docs/design/mathslate_prd_0.3.md`](docs/design/mathslate_prd_0.3.md) — the product requirements
   document, with an implementation-status section kept up to date.
 
 Every `python` example in both documents is executed by the test suite in
