@@ -352,4 +352,4 @@ jupyter lab examples/mathslate_tour.ipynb
 - **[레퍼런스 매뉴얼](docs/manual_ko.md)** — 모든 옵션, 전체 디스패치 규칙, 샘플링 알고리즘 및 정확한 보증 사항을 다룹니다.
 - [`docs/design/mathslate_prd_0.3.md`](docs/design/mathslate_prd_0.3.md) — 제품 요구사항 문서(PRD)로, 최신 상태로 유지되는 구현 상태 섹션이 포함되어 있습니다.
 
-두 문서의 모든 `python` 예제는 테스트 제품군에 의해 문서 순서대로 실행되므로, 매뉴얼의 코드는 실제 동작과 일치함이 보장됩니다.
+이 문서들의 모든 `python` 예제는 테스트 제품군에 의해 문서 순서대로 실행되므로, 문서의 코드는 실제 동작과 일치함이 보장됩니다.

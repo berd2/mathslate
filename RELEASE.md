@@ -33,11 +33,13 @@ dependencies installed.
 ## Publish
 
 1. Commit and push the release preparation.
-2. Create and push an annotated tag, for example:
+2. Read the version from the package, then create and push the matching
+   annotated tag. Replace `X.Y.Z` below with the printed value:
 
    ```bash
-   git tag -a v0.1.5 -m "Release v0.1.5"
-   git push origin v0.1.5
+   python -c "import mathslate; print(mathslate.__version__)"
+   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git push origin vX.Y.Z
    ```
 
 3. In GitHub Actions, wait for **Publish distribution to PyPI** to finish its
