@@ -88,6 +88,9 @@ jobs:
   build:
     name: Build distribution
     needs: [verify, core_install]
+    # Without a status check a job is skipped when anything earlier in its
+    # chain was, and `tag_matches_version` is skipped on a manual run.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
