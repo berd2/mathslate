@@ -194,6 +194,21 @@ class TestStringsThatReachSympifyByAnotherRoad:
         monkeypatch.setenv(name, "must-not-leak")
         assert name not in _sandbox._child_environment()
 
+    @pytest.mark.parametrize("name", ["LD_LIBRARY_PATH", "PYTHONHOME"])
+    def test_what_python_needs_to_start_is_preserved(
+        self, name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without these, some hosts cannot start the child or load NumPy at all."""
+        monkeypatch.setenv(name, "/opt/site/lib")
+        assert _sandbox._child_environment()[name] == "/opt/site/lib"
+
+    @pytest.mark.parametrize("name", ["PYTHONPATH", "PYTHONSTARTUP", "LD_PRELOAD"])
+    def test_startup_code_hooks_are_still_withheld(
+        self, name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(name, "/tmp/hook")
+        assert name not in _sandbox._child_environment()
+
     def test_numeric_runtime_settings_are_preserved(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -267,6 +282,54 @@ class TestStringsThatReachSympifyByAnotherRoad:
 
         with pytest.raises(pickle.UnpicklingError, match="not allowed"):
             _sandbox._ResultUnpickler(io.BytesIO(pickle.dumps(Evil()))).load()
+
+
+class TestOrdinaryResultsSurviveTheProcessBoundary:
+    """The safety layers must not refuse results ordinary code produces."""
+
+    def test_a_numpy_scalar_result_comes_back(self) -> None:
+        scope = _suggestion(
+            "d = dataset({'x': [0, 1, 2, 3], 'y': [1.0, 3.0, 5.0, 7.1]})\n"
+            "a, b = symbols('a b')\n"
+            "result = d.fit(a*x + b).residuals[0]"
+        ).run(show_code=False)
+        assert abs(float(scope["result"]) - 0.02) < 0.01
+
+    # The child pickles with the default protocol: 4 up to Python 3.13, 5 from
+    # 3.14, where arrays are rebuilt with `_frombuffer` instead.
+    @pytest.mark.parametrize("protocol", [4, 5])
+    def test_numpy_values_pass_the_result_unpickler(self, protocol: int) -> None:
+        import io
+        import pickle
+
+        import numpy as np
+
+        values = [np.float64(1.5), np.int64(2), np.bool_(True), np.array([1.0, 2.0])]
+        restored = _sandbox._ResultUnpickler(
+            io.BytesIO(pickle.dumps(values, protocol=protocol))
+        ).load()
+        assert [float(v) for v in restored[:3]] == [1.5, 2.0, 1.0]
+        assert list(restored[3]) == [1.0, 2.0]
+
+    def test_a_dataset_column_summary_can_be_named(self) -> None:
+        scope = _suggestion(
+            "d = dataset({'x': [0, 1, 2, 3], 'y': [1.0, 3.0, 5.0, 7.1]})\n"
+            "result = d.summary(name='x')"
+        ).run(show_code=False)
+        assert scope["result"]["mean"] == 1.5
+
+    def test_errors_name_the_real_object_not_the_guard(self) -> None:
+        """`repair()` sends this text back to the model, so it must name `sin`'s type."""
+        with pytest.raises(UnsupportedInputError) as caught:
+            _suggestion("result = table(sin)").run(show_code=False)
+        assert "_StringGuard" not in str(caught.value)
+        assert "FunctionClass" in str(caught.value)
+
+    def test_an_assigned_function_comes_back_as_itself(self) -> None:
+        import sympy
+
+        scope = _suggestion("f = sin").run(show_code=False)
+        assert scope["f"] is sympy.sin
 
 
 class TestRestrictedDatasetCannotReadTheFilesystem:
