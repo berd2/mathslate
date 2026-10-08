@@ -194,6 +194,21 @@ class TestStringsThatReachSympifyByAnotherRoad:
         monkeypatch.setenv(name, "must-not-leak")
         assert name not in _sandbox._child_environment()
 
+    @pytest.mark.parametrize("name", ["LD_LIBRARY_PATH", "PYTHONHOME"])
+    def test_what_python_needs_to_start_is_preserved(
+        self, name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without these, some hosts cannot start the child or load NumPy at all."""
+        monkeypatch.setenv(name, "/opt/site/lib")
+        assert _sandbox._child_environment()[name] == "/opt/site/lib"
+
+    @pytest.mark.parametrize("name", ["PYTHONPATH", "PYTHONSTARTUP", "LD_PRELOAD"])
+    def test_startup_code_hooks_are_still_withheld(
+        self, name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(name, "/tmp/hook")
+        assert name not in _sandbox._child_environment()
+
     def test_numeric_runtime_settings_are_preserved(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

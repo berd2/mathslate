@@ -316,6 +316,13 @@ _CHILD_ENV_NAMES: Final[frozenset[str]] = frozenset(
         "TZ",
         "USERPROFILE",
         "WINDIR",
+        # Where this Python and its native libraries live, for hosts that set
+        # them (environment modules, relocated installs). Not credentials, and
+        # they name only what the caller itself already started from, so the
+        # child trusts nothing new. PYTHONPATH stays out: `_child_command`
+        # adds import paths after startup instead.
+        "LD_LIBRARY_PATH",
+        "PYTHONHOME",
         # Deterministic text/hash behaviour explicitly selected by the host.
         "PYTHONHASHSEED",
         "PYTHONIOENCODING",
