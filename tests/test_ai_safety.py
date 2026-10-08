@@ -331,6 +331,21 @@ class TestOrdinaryResultsSurviveTheProcessBoundary:
         scope = _suggestion("f = sin").run(show_code=False)
         assert scope["f"] is sympy.sin
 
+    @pytest.mark.parametrize("attribute", ["plotly", "figure"])
+    def test_a_plotly_escape_hatch_comes_back_as_a_figure(
+        self, attribute: str
+    ) -> None:
+        import numpy as np
+        import plotly.graph_objects as go
+
+        scope = _suggestion(
+            f"plot(sin(x), verbose=False).{attribute}"
+        ).run(show_code=False)
+
+        figure = scope["result"]
+        assert isinstance(figure, go.Figure)
+        assert np.asarray(figure.data[0].x, dtype=float).size > 0
+
 
 class TestRestrictedDatasetCannotReadTheFilesystem:
     """`dataset()` is in the allowlist because literal data is legitimate;

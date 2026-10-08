@@ -202,6 +202,33 @@ def _unwrapped(value: Any, depth: int = 0) -> Any:
     return value
 
 
+def _transported_result(value: Any, depth: int = 0) -> Any:
+    """Prepare an allowed result for the restricted process boundary."""
+    if isinstance(value, _StringGuard):
+        return value._target
+
+    # A bare PlotResult has its own safe reducer, but its documented
+    # ``.plotly``/``.figure`` escape hatches expose Plotly's Figure directly.
+    # Plotly's general pickle graph is deliberately outside
+    # ``_ResultUnpickler``'s allowlist, so carry this one public object through
+    # the same narrow figure-spec reconstruction used by PlotResult instead of
+    # broadening the allowlist to all of Plotly.
+    import plotly.graph_objects as go
+
+    if isinstance(value, go.Figure):
+        return _PlotlyFigureResult(value)
+    if depth > 8:
+        return value
+    if isinstance(value, dict):
+        return {
+            _transported_result(k, depth + 1): _transported_result(v, depth + 1)
+            for k, v in value.items()
+        }
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return type(value)(_transported_result(item, depth + 1) for item in value)
+    return value
+
+
 def _holds_string(value: Any, depth: int = 0) -> bool:
     """Whether ``value`` is, or plainly contains, a ``str``."""
     if isinstance(value, str):
@@ -417,6 +444,7 @@ _RESULT_BUILTINS: Final[frozenset[str]] = frozenset(
 )
 _RESULT_FUNCTIONS: Final[frozenset[tuple[str, str]]] = frozenset(
     {
+        ("mathslate.ai.sandbox", "_rebuild_plotly_figure"),
         ("mathslate.result", "_rebuild_plot_result"),
         # NumPy 2 names first; NumPy 1 kept the same functions under `core`.
         ("numpy._core.multiarray", "_reconstruct"),
@@ -427,6 +455,25 @@ _RESULT_FUNCTIONS: Final[frozenset[tuple[str, str]]] = frozenset(
         ("numpy.core.numeric", "_frombuffer"),
     }
 )
+
+
+def _rebuild_plotly_figure(figure_spec: dict[str, Any]) -> Any:
+    """Rebuild the one Plotly object restricted results may return."""
+    import plotly.graph_objects as go
+
+    from ..result import _restore_arrays
+
+    return go.Figure(_restore_arrays(figure_spec))
+
+
+class _PlotlyFigureResult:
+    """Pickle a Figure through a single audited reconstruction function."""
+
+    def __init__(self, figure: Any) -> None:
+        self._figure = figure
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        return (_rebuild_plotly_figure, (self._figure.to_dict(),))
 
 
 class _ResultUnpickler(pickle.Unpickler):
@@ -466,10 +513,12 @@ def _restricted_process_entry(request: bytes) -> bytes:
         with contextlib.redirect_stdout(output):
             value = _execute_and_capture_final_expression(code, scope)
         assigned = {
-            name: _unwrapped(scope[name]) for name in assigned_names if name in scope
+            name: _transported_result(scope[name])
+            for name in assigned_names
+            if name in scope
         }
         if value is not _NO_FINAL_EXPRESSION:
-            assigned["result"] = _unwrapped(value)
+            assigned["result"] = _transported_result(value)
         response: tuple[str, Any] = ("ok", (assigned, output.getvalue()))
         # Serialize before returning so unpicklable results become a useful
         # restricted-execution error rather than a broken pipe.
