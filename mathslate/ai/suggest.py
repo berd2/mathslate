@@ -326,7 +326,7 @@ class Suggestion:
 
         The default namespace contains only the documented MathSlate/SymPy
         names and a minimal builtin set. Restricted code runs in a separate
-        process under a wall-clock budget (see :data:`_RUN_BUDGET`), so a
+        process under a wall-clock budget (see :data:`mathslate.ai.sandbox._RUN_BUDGET`), so a
         legal-looking but runaway expression cannot hang or corrupt the caller.
         Its return value contains only values the suggestion created, never the
         internal MathSlate/SymPy execution namespace. A final bare expression
