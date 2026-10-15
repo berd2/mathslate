@@ -93,6 +93,7 @@ _STRING_KEYWORDS: Final[dict[str, frozenset[str]]] = {
 #: The same, for methods reached by attribute (``data.fit(model, x="t")``).
 _METHOD_STRING_KEYWORDS: Final[dict[str, frozenset[str]]] = {
     "fit": frozenset({"x", "y"}),
+    "summary": frozenset({"name"}),
 }
 #: A name ``symbols()``/``Symbol()`` will accept — belt and suspenders, since a
 #: name is never evaluated, but it keeps even that string to identifier shapes.
@@ -175,10 +176,57 @@ class _StringGuard:
                 f"{self._name}() was given a string where SymPy would evaluate "
                 "it as code; restricted execution passes expressions, not text."
             )
-        return self._target(*args, **kwargs)
+        # A guarded name passed as a value (`table(sin)`) reaches the callee as
+        # the object it stands for, so errors name `FunctionClass`, not this.
+        return self._target(
+            *(_unwrapped(a) for a in args),
+            **{key: _unwrapped(value) for key, value in kwargs.items()},
+        )
 
     def __repr__(self) -> str:
         return repr(self._target)
+
+
+def _unwrapped(value: Any, depth: int = 0) -> Any:
+    """``value`` with any :class:`_StringGuard` replaced by what it wraps."""
+    if isinstance(value, _StringGuard):
+        return value._target
+    if depth > 8:
+        return value
+    if isinstance(value, dict):
+        return {
+            _unwrapped(k, depth + 1): _unwrapped(v, depth + 1) for k, v in value.items()
+        }
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return type(value)(_unwrapped(item, depth + 1) for item in value)
+    return value
+
+
+def _transported_result(value: Any, depth: int = 0) -> Any:
+    """Prepare an allowed result for the restricted process boundary."""
+    if isinstance(value, _StringGuard):
+        return value._target
+
+    # A bare PlotResult has its own safe reducer, but its documented
+    # ``.plotly``/``.figure`` escape hatches expose Plotly's Figure directly.
+    # Plotly's general pickle graph is deliberately outside
+    # ``_ResultUnpickler``'s allowlist, so carry this one public object through
+    # the same narrow figure-spec reconstruction used by PlotResult instead of
+    # broadening the allowlist to all of Plotly.
+    import plotly.graph_objects as go
+
+    if isinstance(value, go.Figure):
+        return _PlotlyFigureResult(value)
+    if depth > 8:
+        return value
+    if isinstance(value, dict):
+        return {
+            _transported_result(k, depth + 1): _transported_result(v, depth + 1)
+            for k, v in value.items()
+        }
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return type(value)(_transported_result(item, depth + 1) for item in value)
+    return value
 
 
 def _holds_string(value: Any, depth: int = 0) -> bool:
@@ -295,6 +343,13 @@ _CHILD_ENV_NAMES: Final[frozenset[str]] = frozenset(
         "TZ",
         "USERPROFILE",
         "WINDIR",
+        # Where this Python and its native libraries live, for hosts that set
+        # them (environment modules, relocated installs). Not credentials, and
+        # they name only what the caller itself already started from, so the
+        # child trusts nothing new. PYTHONPATH stays out: `_child_command`
+        # adds import paths after startup instead.
+        "LD_LIBRARY_PATH",
+        "PYTHONHOME",
         # Deterministic text/hash behaviour explicitly selected by the host.
         "PYTHONHASHSEED",
         "PYTHONIOENCODING",
@@ -378,19 +433,47 @@ def _path_bootstrap(paths: Sequence[str]) -> str:
 
 
 #: What a restricted result may be rebuilt from: classes of these packages,
-#: and the two reconstructors their pickles are known to call. Any other
-#: global — ``os.system``, ``builtins.eval``, ``sympy.sympify`` — is refused.
+#: and the reconstructors their pickles are known to call — NumPy's for arrays
+#: (``_reconstruct``, or ``_frombuffer`` under pickle protocol 5, the default
+#: from Python 3.14) and for scalars such as ``np.float64`` (``scalar``). Any
+#: other global — ``os.system``, ``builtins.eval``, ``sympy.sympify`` — is
+#: refused.
 _RESULT_MODULES: Final[tuple[str, ...]] = ("mathslate", "sympy", "numpy", "mpmath")
 _RESULT_BUILTINS: Final[frozenset[str]] = frozenset(
     {"complex", "set", "frozenset", "slice", "range", "bytearray", "object"}
 )
 _RESULT_FUNCTIONS: Final[frozenset[tuple[str, str]]] = frozenset(
     {
+        ("mathslate.ai.sandbox", "_rebuild_plotly_figure"),
         ("mathslate.result", "_rebuild_plot_result"),
+        # NumPy 2 names first; NumPy 1 kept the same functions under `core`.
         ("numpy._core.multiarray", "_reconstruct"),
+        ("numpy._core.multiarray", "scalar"),
+        ("numpy._core.numeric", "_frombuffer"),
         ("numpy.core.multiarray", "_reconstruct"),
+        ("numpy.core.multiarray", "scalar"),
+        ("numpy.core.numeric", "_frombuffer"),
     }
 )
+
+
+def _rebuild_plotly_figure(figure_spec: dict[str, Any]) -> Any:
+    """Rebuild the one Plotly object restricted results may return."""
+    import plotly.graph_objects as go
+
+    from ..result import _restore_arrays
+
+    return go.Figure(_restore_arrays(figure_spec))
+
+
+class _PlotlyFigureResult:
+    """Pickle a Figure through a single audited reconstruction function."""
+
+    def __init__(self, figure: Any) -> None:
+        self._figure = figure
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        return (_rebuild_plotly_figure, (self._figure.to_dict(),))
 
 
 class _ResultUnpickler(pickle.Unpickler):
@@ -429,9 +512,13 @@ def _restricted_process_entry(request: bytes) -> bytes:
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             value = _execute_and_capture_final_expression(code, scope)
-        assigned = {name: scope[name] for name in assigned_names if name in scope}
+        assigned = {
+            name: _transported_result(scope[name])
+            for name in assigned_names
+            if name in scope
+        }
         if value is not _NO_FINAL_EXPRESSION:
-            assigned["result"] = value
+            assigned["result"] = _transported_result(value)
         response: tuple[str, Any] = ("ok", (assigned, output.getvalue()))
         # Serialize before returning so unpicklable results become a useful
         # restricted-execution error rather than a broken pipe.

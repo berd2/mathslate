@@ -32,15 +32,21 @@ dependencies installed.
 
 ## Publish
 
-1. Commit and push the release preparation.
-2. Read the version from the package, then create and push the matching
-   annotated tag. Replace `X.Y.Z` below with the printed value:
+1. Commit and push the release preparation, and merge it into `master`.
+2. From an up-to-date `master` checkout, tag the version the checkout carries
+   and push the tag. `scripts/release_version.py` reads it from
+   `mathslate/__init__.py` in the checkout rather than importing `mathslate`,
+   which could find a different installed copy:
 
    ```bash
-   python -c "import mathslate; print(mathslate.__version__)"
-   git tag -a vX.Y.Z -m "Release vX.Y.Z"
-   git push origin vX.Y.Z
+   git switch master && git pull
+   version="$(python scripts/release_version.py)"
+   git tag -a "v$version" -m "Release v$version"
+   git push origin "v$version"
    ```
+
+   The publish workflow checks the tag against the same file first, and stops
+   before testing or uploading anything if they disagree.
 
 3. In GitHub Actions, wait for **Publish distribution to PyPI** to finish its
    full test suite and build. Approve the `pypi` environment when requested.
