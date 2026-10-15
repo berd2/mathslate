@@ -1,0 +1,23 @@
+title: 설치 없이 체험 — JupyterLite
+subtitle: 브라우저에서 바로
+output: 20_jupyterlite.mp4
+env: jupyterlite
+scenes:
+  - caption: 설치 없이 브라우저에서 바로 씁니다. 빈 노트북으로 시작합니다
+    steps:
+      - wait: 2.5
+  - caption: 처음 한 번, 첫 셀에서 mathslate를 설치합니다
+    steps:
+      - cell: {index: 0, code: "import piplite\nawait piplite.install(\"mathslate\")"}
+      - run: {wait_output: any, timeout: 240}
+  - caption: 그다음은 똑같습니다. 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 1, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 120}
+  - caption: plot() 한 줄로 그래프가 나옵니다
+    steps:
+      - cell: {index: 2, code_from: "tutorial_ko.md#video:first-plot", part: 1}
+      - run: {wait_output: figure, expect_text: "1 discontinuity handled", timeout: 240}
+  - caption: 빨리 둘러볼 때만 쓰고, 계속 쓰려면 설치하세요
+    steps:
+      - highlight: {output_line: "curve | x ∈ [-10, 10] | 411 samples | 1 discontinuity handled", seconds: 3.5}

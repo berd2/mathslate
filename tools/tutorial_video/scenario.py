@@ -54,6 +54,7 @@ class Scenario:
     output: str
     scenes: list[Scene] = field(default_factory=list)
     setup: dict[str, Any] = field(default_factory=dict)
+    env: str = "jupyterlab"  # jupyterlab | marimo (계획서 §4)
 
     @property
     def stem(self) -> str:
@@ -76,4 +77,4 @@ def load(path: Path) -> Scenario:
         if key not in raw:
             raise ScenarioError(f"{path.name}: '{key}'가 없다.")
     scenes = [Scene(caption=s["caption"], steps=[_resolve_step(st) for st in s.get("steps", [])]) for s in raw["scenes"]]
-    return Scenario(path=path, title=raw["title"], output=raw["output"], scenes=scenes, setup=raw.get("setup", {}))
+    return Scenario(path=path, title=raw["title"], output=raw["output"], scenes=scenes, setup=raw.get("setup", {}), env=raw.get("env", "jupyterlab"))

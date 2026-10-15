@@ -16,7 +16,7 @@ tools/tutorial_video/out/*.mp4, *.srt        ← 결과 (git에 넣지 않는다
 requirements-video.txt                       ← playwright, pyyaml, jupyterlab, (starter extra)
 ```
 
-> **상태: 러너(M0·M1) 구현됨, 01~05·09·11편 시나리오가 돈다.** `tools/tutorial_video/`에 `jupyter_env.py`·`scenario.py`·`runner.py`가 있고 실제로 돌려 webm·`.ko.srt`와 화면을 확인했다(§9 "구현하며 확인한 것"). 합성(`compose.py` — mp4·대기 가속)과 20·21·00편은 아직 없다. §10 카드는 `README.md`·`docs/tutorial_ko.md`·`examples/mathslate_tour.py`를 읽고 쓴 것이다.
+> **상태: 러너·합성·전 편 시나리오(00~11, 20·21) 구현됨.** `tools/tutorial_video/`에 `jupyter_env.py`·`marimo_env.py`·`scenario.py`·`runner.py`·`compose.py`·`terminal.py`·`build_lite.py`가 있고 실제로 돌려 webm·mp4·`.ko.srt`와 화면을 확인했다(§9 "구현하며 확인한 것"). 30번대(AI 도우미)와 40번대는 예약. §10 카드는 `README.md`·`docs/tutorial_ko.md`·`examples/mathslate_tour.py`를 읽고 쓴 것이다.
 
 ## 0. 왜 이 방식인가
 
@@ -48,7 +48,7 @@ requirements-video.txt                       ← playwright, pyyaml, jupyterlab,
 
 | # | 제목 | 튜토리얼 | 길이(안) | 환경 | 상태 |
 |---|---|---|---|---|---|
-| 00 | 설치와 첫 실행 (`mathslate[starter]`, Jupyter Lab 열기) | §0 | 40초 | 터미널 + Lab | 계획 |
+| 00 | 설치와 첫 실행 (`mathslate[starter]`, Jupyter Lab 열기) | §0 | 40초 | 터미널 + Lab | 구현 |
 | 01 | 첫 그래프 — `plot(sin(x)/x)`와 출력 메시지 읽기 | §1·§2 | 45초 | Lab | 구현 |
 | 02 | 여러 곡선과 단 하나의 규칙 (리스트 vs 튜플) | §3 | 40초 | Lab | 구현 |
 | 03 | 범위 지정과 옵션 — `(x, 0, 6.28)`, `title=`, `points=` | §4 | 40초 | Lab | 구현 |
@@ -65,8 +65,8 @@ requirements-video.txt                       ← playwright, pyyaml, jupyterlab,
 
 | # | 제목 | 길이(안) | 환경 | 상태 |
 |---|---|---|---|---|
-| 20 | 설치 없이 체험 — JupyterLite | 40초 | 정적 사이트(Pyodide) | 계획 |
-| 21 | marimo에서 쓰기 (`import *` 대신 명시 import) | 35초 | marimo | 계획 |
+| 20 | 설치 없이 체험 — JupyterLite | 40초 | 정적 사이트(Pyodide) | 구현 |
+| 21 | marimo에서 쓰기 (`import *` 대신 명시 import) | 35초 | marimo | 구현 |
 
 ### 예약
 - 30번대: AI 도우미(`ask()`·`explain()`·`describe()`·`suggest_model()`·`draft.repair()` — 모두 `mathslate.ai`) — **API 키와 네트워크가 필요**해 지금은 카드를 만들지 않는다. 모의 공급자가 있어야 결정적으로 찍힌다(§9-5).
@@ -194,6 +194,14 @@ python -m venv .venv-video
 - **문서에 없는 코드는 `code:`로 직접 적는다.** `analyze(x**3 - 3*x)`·`animate(s*sin(x))`·`table(sin(x), (x, 0, 1))`·`page.save("handout.html")`는 문서에 코드 블록이 아니라 표·산문으로만 있어서 시나리오에 적었다(실행해 확인했다). 나머지(`slider`·`fit-line`·`worksheet` 등)는 앵커로 문서 블록을 가리킨다 — 앵커를 `tutorial_ko.md`에 4개(`data-list`·`data-pair`·`fit-line`·`worksheet`), `guide_ko.md`에 1개(`slider`) 더했다.
 - 8편의 `fit-line` 블록은 한 셀에 4줄이라 입력에 약 8초가 걸린다 — 영상 35초 중 20초 가까이가 입력·실행 대기다(compose 가속 대상).
 - 10편의 Lab 파일 목록은 `handout.html`이 생겨도 새로고침 전에는 안 보여서 그 장면은 넣지 않았다(계획서 10편 2번).
+
+구현하며 확인한 것(합성 `compose.py`, 20·21·00편):
+- **합성**: `python -m tools.tutorial_video.compose [번호…]`가 `out/NN_이름.mp4`(H.264)와 줄어든 시간에 맞춘 `NN_이름.mp4.ko.srt`를 만든다. 러너가 `NN_이름.waits.json`에 "실행 키를 누른 뒤 출력이 나올 때까지"의 구간을 기록하고, 2초 넘는 구간은 첫 0.8초만 원래 속도로 두고 나머지를 6배속으로 돌린다(01편 21.4→16.9초, 05편 33.9→23.1초, 20편 32.4→20.5초). 입력 시간은 가속하지 않는다.
+- **marimo(21편)**: `marimo edit --headless --no-token`으로 임시 노트북을 연다. `from mathslate import *`는 셀에 `SyntaxError: Importing symbols with \`import *\` is not allowed in marimo.`(`CELL NOT RUN`)로 그대로 거부된다. 그림은 marimo가 **`iframe` 안에** 그리므로 `frame_locator("iframe")`로 `.js-plotly-plot`을 기다린다. marimo는 Plotly를 **CDN에서** 불러온다 — 이 샌드박스에서는 프록시 인증서를 Chromium이 믿지 않아 `Plotly is not defined`가 났고, 컨텍스트에 `ignore_https_errors=True`를 주어 해결했다(일반 사용자 환경에서는 필요 없다).
+- **JupyterLite(20편)**: `python -m tools.tutorial_video.build_lite`가 `deploy-lite.yml`의 빌드 단계를 로컬에서 재현한다(`out/lite-site`, 74MB). **`jupyterlite-pyodide-kernel` 0.8은 Python 3.12 이상을 요구**해 별도 3.12 가상환경(`out/.lite-venv`)을 만든다. Pyodide 런타임(`cdn.jsdelivr.net/pyodide/…`)과 패키지는 **실행할 때 CDN에서** 오는데, 워커의 ES 모듈 로드는 `ignore_https_errors`가 안 먹어 실패한다 — 러너가 외부 요청을 `context.route(…, route.fetch → fulfill)`로 Playwright 네트워크에서 대신 가져와 채운다(일반 환경에서는 필요 없다). 이 PC에서 커널 약 8초, `piplite.install("mathslate")` 약 4초, 첫 그림 약 10초. 런처의 `Python (Pyodide)` 카드로 빈 노트북을 열고, `await piplite.install("mathslate")`는 README의 코드를 그대로 쓴다.
+- **터미널(00편)**: 브라우저가 아니라 **실제 명령의 pty 출력을 기록해 xterm.js(jsDelivr npm `xterm@5.3.0`)에 재생**한다. `pip install "mathslate[starter]"`는 새 가상환경에서 `--no-cache-dir`로 진짜 돌린 기록(이 PC에서 38.5초, 697 이벤트)이고, 재생은 긴 공백을 0.4초로 접고 0.1초 묶음으로 14초 안팎에 맞춘다 — **내용은 실제 pip 출력 그대로이고 시간만 줄인다.** 기록은 `out/captures/`에 캐시된다(지우면 다시 돌린다). `jupyter lab`은 서버 로그의 줄 중 URL 안내(`Or copy and paste one of these URLs:` 등)만 남기고 토큰은 `…`로 가린다. 재생 화면은 `set_content`로 문서를 갈아 끼우므로 자막 막대를 다시 심어야 한다(그렇지 않으면 막대가 사라진다). 끝에서 같은 페이지를 Jupyter Lab 주소로 이동시켜 첫 셀 장면으로 이어 간다.
+- **자막/`pip` 사실 확인**: `mathslate`는 PyPI에 게시돼 있어(`0.1.6`) 문서의 설치 명령이 실제로 동작한다.
+- **환경 한계**: 위 CDN 우회는 이 샌드박스(프록시 인증서) 전용이다. 인터넷이 자유로운 PC에서는 `ignore_https_errors`·`route`가 없어도 된다.
 
 구현 때 확인할 것:
 1. **셀에 글자를 칠 때 괄호 자동 닫기.** CodeMirror 6은 `(`를 치면 `)`를 자동으로 넣고, 사용자가 `)`를 치면 덮어쓴다. `keyboard.type`이 같은 결과를 내는지(`plot(sin(x)/x)`가 그대로 완성되는지) 확인한다. 따옴표·대괄호도.

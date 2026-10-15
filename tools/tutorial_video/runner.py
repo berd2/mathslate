@@ -12,24 +12,32 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
+import tempfile
 import urllib.request
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
 from .jupyter_env import SELECTORS as S
 from .jupyter_env import jupyter_lab
+from .marimo_env import marimo_edit
+from . import terminal as term
 from .scenario import Scenario, load
 
 OUT_DIR = Path(__file__).resolve().parent / "out"
 VIEWPORT = {"width": 1280, "height": 720}
 CAPTION_H = 76
 
-OVERLAY_SCRIPT = f"""
+def overlay_script(shrink_css: str | None = None) -> str:
+    """자막 막대·가짜 커서를 심는 초기화 스크립트. shrink_css는 앱 영역을 막대 높이만큼 줄이는 CSS(Lab은 #main, 기본값)."""
+    shrink_css = shrink_css if shrink_css is not None else f"#main{{height:calc(100% - {CAPTION_H}px)!important}}"
+    return f"""
 (() => {{
   if (window.top !== window) return;  // iframe(예: 10편에서 연 handout.html) 안에는 막대를 또 만들지 않는다
   const H = {CAPTION_H};
@@ -38,7 +46,7 @@ OVERLAY_SCRIPT = f"""
     // 자막 막대는 앱 '아래' 별도 영역이다 — Jupyter Lab 상태 표시줄을 가리지 않게 Lab 메인 영역(#main)만 줄인다.
     // (body를 줄이거나 transform을 주면 Lab의 절대 배치가 깨진다.)
     const st = document.createElement('style');
-    st.textContent = `#main{{height:calc(100% - ${{H}}px)!important}}`;
+    st.textContent = `{shrink_css}`;
     document.head.append(st);
     const bar = document.createElement('div');
     bar.id = '__cap';
@@ -54,6 +62,9 @@ OVERLAY_SCRIPT = f"""
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install); else install();
 }})();
 """
+
+
+OVERLAY_SCRIPT = overlay_script()
 
 
 def _ffmpeg() -> str:
@@ -118,6 +129,7 @@ def _do_run(page: Page, args: dict, state: dict) -> None:
     index = args.get("index", state["last_cell"])
     timeout_ms = int(args.get("timeout", 60) * 1000)
     page.keyboard.press("Shift+Enter")
+    wait_start = state["clock"]()
     _prompt_done(page, index, timeout_ms)
     cell = _cell(page, index)
     wait = args.get("wait_output", "any")
@@ -140,6 +152,8 @@ def _do_run(page: Page, args: dict, state: dict) -> None:
         except Exception as error:  # noqa: BLE001
             text = cell.locator(S["output"]).first.inner_text()
             raise AssertionError(f"셀 {index}의 출력에 {args['expect_error']!r}가 없다:\n{text[:400]}") from error
+    # 가속 대상: 실행 키를 누른 뒤 출력이 나올 때까지의 대기(compose.py가 이 구간을 빠르게 돌린다).
+    state["waits"].append((wait_start, state["clock"]()))
     # 실행한 셀을 화면 위쪽에 맞춘다 — 입력 코드가 맨 위, 출력(그림)이 그 아래로 보인다.
     cell.evaluate("el => el.scrollIntoView({block: 'start'})")
     page.wait_for_timeout(int(args.get("settle_ms", 800)))
@@ -243,6 +257,89 @@ def _do_new_tab(page: Page, args: dict, base: str) -> None:
     page.wait_for_timeout(500)
 
 
+def _term_write(page: Page, data: bytes) -> None:
+    import base64
+
+    page.evaluate("b => window.feed(b)", base64.b64encode(data).decode())
+
+
+def _term_type(page: Page, text: str, delay_ms: int = 55) -> None:
+    for ch in text:
+        _term_write(page, ch.encode())
+        page.wait_for_timeout(delay_ms)
+    page.wait_for_timeout(350)
+    _term_write(page, b"\r\n")
+
+
+def _real_capture(name: str) -> dict:
+    """명령 기록을 만든다(이미 있으면 재사용). 설치는 새 가상환경에서 실제 `pip install "mathslate[starter]"`를 돌린다."""
+    if name == "pip_install":
+        tmp = Path(tempfile.mkdtemp(prefix="mathslate-pip-"))
+        try:
+            subprocess.run([sys.executable, "-m", "venv", str(tmp / "v")], check=True)
+            return term.capture(name, [str(tmp / "v" / "bin" / "pip"), "install", "--no-cache-dir", "mathslate[starter]"], env={"PIP_DISABLE_PIP_VERSION_CHECK": "1"}, timeout=1200)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    if name == "jupyter_lab":
+        tmp = Path(tempfile.mkdtemp(prefix="mathslate-lab-"))
+        try:
+            env = {"JUPYTER_CONFIG_DIR": str(tmp / "c"), "JUPYTER_DATA_DIR": str(tmp / "d"), "JUPYTER_RUNTIME_DIR": str(tmp / "r")}
+            return term.capture(name, [sys.executable, "-m", "jupyterlab", "--no-browser", "--allow-root", f"--ServerApp.root_dir={tmp}"], env=env, timeout=12)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    raise KeyError(name)
+
+
+def _do_terminal(page: Page, args: dict) -> None:
+    """`terminal: {type, capture, target_seconds, keep: [정규식…]}` — 명령을 치고 실제 기록을 가속 재생한다."""
+    cap = _real_capture(args["capture"])
+    if args.get("prompt", True):
+        _term_write(page, b"\x1b[1;32m$\x1b[0m ")
+    _term_type(page, args["type"])
+    events = cap["events"]
+    if "keep" in args:  # 서버 로그처럼 내용이 긴 출력은 보여 줄 줄만 남긴다(내용은 실제 출력 그대로, 임시 경로·토큰은 가린다)
+        import base64
+
+        text = b"".join(base64.b64decode(b) for _, b in events).decode("utf-8", "replace")
+        ansi = re.compile(r"\x1b\[[0-9;]*m")
+        lines = [
+            term.sanitize_url(ln)
+            for ln in text.replace("\r", "").split("\n")
+            if any(re.search(k, ansi.sub("", ln)) for k in args["keep"])  # 색 코드를 뺀 글자로 고르고, 출력은 색이 든 원본으로
+        ]
+        for ln in lines:
+            _term_write(page, (ln.rstrip() + "\r\n").encode())
+            page.wait_for_timeout(120)
+    else:
+        import base64
+
+        # 기록 시각을 target_seconds에 맞게 줄이고(긴 공백은 0.4초로 접는다), 0.1초 간격 묶음으로 한꺼번에 쓴다.
+        factor = max(1.0, cap["duration"] / args.get("target_seconds", 12))
+        scaled, prev, clock = [], 0.0, 0.0
+        for t, b in events:
+            clock += min((t - prev) / factor, 0.4)
+            prev = t
+            scaled.append((clock, base64.b64decode(b)))
+        batches: dict[int, bytes] = {}
+        for clock, data in scaled:
+            batches[int(clock / 0.1)] = batches.get(int(clock / 0.1), b"") + data
+        last = 0
+        for slot in sorted(batches):
+            page.wait_for_timeout(max(0, (slot - last) * 100))
+            last = slot
+            _term_write(page, batches[slot])
+    _term_write(page, b"\x1b[1;32m$\x1b[0m ")
+    page.wait_for_timeout(int(args.get("hold", 2.0) * 1000))
+
+
+def _do_browser(page: Page, state: dict) -> None:
+    """터미널 화면에서 브라우저(Jupyter Lab)로 넘어간다."""
+    page.goto(state["lab_url"])
+    page.wait_for_selector(S["code_cell"], timeout=60_000)
+    page.wait_for_function("() => /Idle/.test(document.body.innerText)", timeout=60_000)
+    page.wait_for_timeout(1000)
+
+
 def _do_step(page: Page, step: dict, state: dict) -> None:
     (action, args), = step.items()
     if action == "cell":
@@ -258,6 +355,10 @@ def _do_step(page: Page, step: dict, state: dict) -> None:
         _do_click(page, args, state)
     elif action == "new_tab":
         _do_new_tab(page, args, state["base"])
+    elif action == "terminal":
+        _do_terminal(page, args)
+    elif action == "browser":
+        _do_browser(page, state)
     elif action == "scroll":
         _cell(page, args["cell"]).scroll_into_view_if_needed()
         page.wait_for_timeout(500)
@@ -265,6 +366,47 @@ def _do_step(page: Page, step: dict, state: dict) -> None:
         page.wait_for_timeout(int(float(args) * 1000))
     else:
         raise NotImplementedError(f"아직 없는 동작: {action}")
+
+
+def _marimo_editor(page: Page, index: int):
+    return page.locator(".cm-content").nth(index)
+
+
+def _do_marimo_step(page: Page, step: dict, state: dict) -> None:
+    """marimo 편집 화면용 동작. 셀 입력칸은 `.cm-content`, 그림은 `.js-plotly-plot`(마지막 식이 그대로 출력된다)."""
+    (action, args), = step.items()
+    if action == "cell":
+        editor = _marimo_editor(page, args.get("index", 0))
+        editor.scroll_into_view_if_needed()
+        box = editor.bounding_box()
+        assert box, "셀 입력칸의 위치를 알 수 없다"
+        _move_cursor(page, box["x"] + min(box["width"] / 2, 300), box["y"] + box["height"] / 2)
+        editor.click()
+        if args.get("replace"):
+            page.keyboard.press("Control+a")
+            page.keyboard.press("Delete")
+        page.keyboard.type(args["code"], delay=args.get("type_delay_ms", 45))
+        page.wait_for_timeout(400)
+    elif action == "run":
+        timeout_ms = int(args.get("timeout", 60) * 1000)
+        wait_start = state["clock"]()
+        page.keyboard.press("Shift+Enter")
+        if args.get("wait_output") == "figure":
+            # marimo는 HTML 출력을 iframe 안에 그린다.
+            page.frame_locator("iframe").last.locator(S["plotly"]).first.wait_for(timeout=timeout_ms)
+        if "expect_text" in args:
+            page.get_by_text(args["expect_text"]).first.wait_for(timeout=timeout_ms)
+        page.wait_for_timeout(int(args.get("settle_ms", 1000)))
+        state["waits"].append((wait_start, state["clock"]()))
+    elif action == "highlight":
+        target = page.get_by_text(args["text"]).first if "text" in args else page.locator(args["selector"]).first
+        target.evaluate("el => { el.dataset.hlold = el.style.outline; el.style.outline = '3px solid #f59e0b'; el.style.outlineOffset = '3px'; }")
+        page.wait_for_timeout(int(args.get("seconds", 2.5) * 1000))
+        target.evaluate("el => { el.style.outline = el.dataset.hlold || ''; }")
+    elif action == "wait":
+        page.wait_for_timeout(int(float(args) * 1000))
+    else:
+        raise NotImplementedError(f"marimo에서 아직 없는 동작: {action}")
 
 
 def _create_notebook(base_url: str) -> str:
@@ -301,35 +443,109 @@ def _trim_start(webm: Path, seconds: float) -> bool:
     return True
 
 
+@contextmanager
+def _static_site(site: Path):
+    """JupyterLite 사이트를 `python -m http.server`로 연다."""
+    import socket
+
+    if not (site / "lab" / "index.html").exists():
+        raise RuntimeError(f"JupyterLite 사이트가 없다: {site}\n먼저 python -m tools.tutorial_video.build_lite")
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    proc = subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1", "--directory", str(site)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(40):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1).read(10)
+                break
+            except Exception:
+                time.sleep(0.25)
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        proc.terminate()
+
+
+def _fetch_externally(route) -> None:
+    """Pyodide 런타임·패키지는 CDN에서 오는데, Chromium의 워커 모듈 로드는 이 환경의 프록시 인증서 오류를 무시하지 못한다.
+    그래서 외부 요청을 Playwright의 네트워크(오류 무시)로 대신 가져와 채워 준다. 일반 사용자 환경에서는 필요 없다."""
+    try:
+        route.fulfill(response=route.fetch(timeout=180_000))
+    except Exception:  # noqa: BLE001
+        route.abort()
+
+
 def run_scenario(scenario: Scenario, headed: bool = False) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     video_dir = OUT_DIR / f".rec-{scenario.stem}"
     shutil.rmtree(video_dir, ignore_errors=True)
     exe = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE") or None
     print(f"▶ {scenario.stem} — {scenario.title}")
-    with jupyter_lab() as (url, _work), sync_playwright() as pw:
-        name = _create_notebook(url)
+    marimo = scenario.env == "marimo"
+    lite = scenario.env == "jupyterlite"
+    terminal = scenario.env == "terminal"
+    with ExitStack() as stack:
+        if lite:
+            base = stack.enter_context(_static_site(Path(os.environ.get("MATHSLATE_LITE_SITE", OUT_DIR / "lite-site"))))
+            overlay = OVERLAY_SCRIPT
+        elif marimo:
+            base = stack.enter_context(marimo_edit())
+            overlay = overlay_script("")  # marimo는 화면이 스크롤되는 문서라 앱 영역을 줄이지 않고 막대를 겹쳐 둔다
+        else:  # jupyterlab, terminal(마지막에 Lab으로 넘어간다)
+            url = stack.enter_context(jupyter_lab())[0]
+            name = _create_notebook(url)
+            overlay = OVERLAY_SCRIPT
+        pw = stack.enter_context(sync_playwright())
         browser = pw.chromium.launch(executable_path=exe, headless=not headed, args=["--use-gl=swiftshader", "--enable-unsafe-swiftshader"])
-        context = browser.new_context(viewport=VIEWPORT, record_video_dir=str(video_dir), record_video_size=VIEWPORT)
-        context.add_init_script(OVERLAY_SCRIPT)
+        # marimo는 Plotly를 CDN에서 불러온다. 이 환경의 프록시 인증서를 Chromium이 믿지 않아 그림이 안 그려지므로 인증서 오류를 무시한다(일반 사용자 환경에서는 필요 없다).
+        context = browser.new_context(viewport=VIEWPORT, record_video_dir=str(video_dir), record_video_size=VIEWPORT, ignore_https_errors=True)
+        context.add_init_script(overlay)
+        if lite:
+            context.route(lambda u: u.startswith("http") and not u.startswith("http://127.0.0.1"), _fetch_externally)
         page = context.new_page()
         t0 = time.time()
         cues: list[tuple[float, float, str]] = []
         try:
-            root = url.split("/lab")[0]
-            token = url.split("token=")[1].split("&")[0]
-            page.goto(f"{root}/lab/tree/{name}?token={token}&reset")
-            page.wait_for_selector(S["code_cell"], timeout=60_000)
-            # 커널이 준비될 때까지(오른쪽 위 표시가 Idle) — 영상에서는 이 구간을 잘라낸다.
-            page.wait_for_function("() => (document.querySelector('.jp-Notebook-ExecutionIndicator')?.title || '').includes('Idle') || /Idle/.test(document.body.innerText)", timeout=60_000)
-            page.wait_for_timeout(1500)
+            if terminal:
+                # 시작은 터미널 화면. 브라우저(Lab)로 넘어가는 `browser` 단계에서 Lab 주소로 이동한다.
+                page.set_content(term.page_html())
+                page.wait_for_function("() => !!window.term", timeout=30_000)
+                page.evaluate(overlay)  # set_content가 문서를 갈아 끼워 초기화 스크립트가 만든 자막 막대가 사라진다 — 다시 심는다
+                page.wait_for_timeout(800)
+                root = url.split("/lab")[0]
+                token = url.split("token=")[1].split("&")[0]
+            elif lite:
+                page.goto(f"{base}/lab/index.html?reset")
+                page.wait_for_selector(".jp-LauncherCard", timeout=90_000)
+                page.locator('.jp-LauncherCard[data-category="Notebook"]').first.click()
+                page.wait_for_selector(S["code_cell"], timeout=90_000)
+                # Pyodide 커널이 뜰 때까지 — 영상에서는 이 구간을 잘라낸다.
+                page.wait_for_function("() => /Idle/.test(document.body.innerText)", timeout=300_000)
+                page.wait_for_timeout(1500)
+                root, token = base, ""
+            elif marimo:
+                page.goto(base)
+                page.wait_for_selector(".cm-content", timeout=60_000)
+                page.wait_for_timeout(1500)
+                root, token = base, ""
+            else:
+                root = url.split("/lab")[0]
+                token = url.split("token=")[1].split("&")[0]
+                page.goto(f"{root}/lab/tree/{name}?token={token}&reset")
+                page.wait_for_selector(S["code_cell"], timeout=60_000)
+                # 커널이 준비될 때까지(오른쪽 위 표시가 Idle) — 영상에서는 이 구간을 잘라낸다.
+                page.wait_for_function("() => (document.querySelector('.jp-Notebook-ExecutionIndicator')?.title || '').includes('Idle') || /Idle/.test(document.body.innerText)", timeout=60_000)
+                page.wait_for_timeout(1500)
             ready = time.time() - t0
-            state = {"last_cell": 0, "base": (root, token)}
+            state = {"last_cell": 0, "base": (root, token), "waits": [], "clock": lambda: time.time() - t0 - ready}
+            if terminal:
+                state["lab_url"] = f"{root}/lab/tree/{name}?token={token}&reset"
+            do_step = _do_marimo_step if marimo else _do_step
             for scene in scenario.scenes:
                 start = time.time() - t0 - ready
                 _set_caption(page, scene.caption)
                 for step in scene.steps:
-                    _do_step(page, step, state)
+                    do_step(page, step, state)
                 cues.append((start, time.time() - t0 - ready, scene.caption))
         except Exception:
             page.screenshot(path=str(OUT_DIR / f"{scenario.stem}.fail.png"))
@@ -344,6 +560,7 @@ def run_scenario(scenario: Scenario, headed: bool = False) -> Path:
     _trim_start(target, ready)
     srt = "\n".join(f"{i}\n{_srt_time(a)} --> {_srt_time(b)}\n{text}\n" for i, (a, b, text) in enumerate(cues, 1))
     (OUT_DIR / f"{scenario.stem}.ko.srt").write_text(srt, encoding="utf-8")
+    (OUT_DIR / f"{scenario.stem}.waits.json").write_text(json.dumps({"waits": state["waits"]}), encoding="utf-8")
     print(f"  ✓ {target}")
     return target
 
