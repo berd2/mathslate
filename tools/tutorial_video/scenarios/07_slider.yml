@@ -1,0 +1,26 @@
+title: slider()와 animate()
+subtitle: 콜백 없이 끌어서 보기
+output: 07_slider.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 먼저 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: slider()로 매개변수를 만들고 plot()에 그냥 씁니다. 콜백이 필요 없습니다
+    steps:
+      - cell: {index: 1, code_from: "guide_ko.md#video:slider"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 손잡이를 끌면 그래프가 바뀝니다
+    steps:
+      - drag_slider: {to: 0.95, seconds: 3.5}
+      - wait: 1
+      - drag_slider: {to: 0.35, seconds: 2.5}
+  - caption: animate()는 재생 버튼이 붙은 버전입니다
+    steps:
+      - cell: {index: 2, code: "animate(s*sin(x))"}
+      - run: {wait_output: figure, timeout: 90}
+      - click: {selector: ".updatemenu-button >> text=play"}
+      - wait: 4
+      - click: {selector: ".updatemenu-button >> text=pause"}

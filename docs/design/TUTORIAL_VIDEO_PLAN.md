@@ -16,7 +16,7 @@ tools/tutorial_video/out/*.mp4, *.srt        ← 결과 (git에 넣지 않는다
 requirements-video.txt                       ← playwright, pyyaml, jupyterlab, (starter extra)
 ```
 
-> **상태: 러너(M0·M1) 구현됨, 01~05·09·11편 시나리오가 돈다.** `tools/tutorial_video/`에 `jupyter_env.py`·`scenario.py`·`runner.py`가 있고 실제로 돌려 webm·`.ko.srt`와 화면을 확인했다(§9 "구현하며 확인한 것"). 합성(`compose.py` — mp4·대기 가속)과 06·07·08·10편, 20·21·00편은 아직 없다. §10 카드는 `README.md`·`docs/tutorial_ko.md`·`examples/mathslate_tour.py`를 읽고 쓴 것이다.
+> **상태: 러너(M0·M1) 구현됨, 01~05·09·11편 시나리오가 돈다.** `tools/tutorial_video/`에 `jupyter_env.py`·`scenario.py`·`runner.py`가 있고 실제로 돌려 webm·`.ko.srt`와 화면을 확인했다(§9 "구현하며 확인한 것"). 합성(`compose.py` — mp4·대기 가속)과 20·21·00편은 아직 없다. §10 카드는 `README.md`·`docs/tutorial_ko.md`·`examples/mathslate_tour.py`를 읽고 쓴 것이다.
 
 ## 0. 왜 이 방식인가
 
@@ -54,11 +54,11 @@ requirements-video.txt                       ← playwright, pyyaml, jupyterlab,
 | 03 | 범위 지정과 옵션 — `(x, 0, 6.28)`, `title=`, `points=` | §4 | 40초 | Lab | 구현 |
 | 04 | 그리기 어려운 함수 — `tan(x)`·`1/x`·`floor(x)` | §5 | 45초 | Lab | 구현 |
 | 05 | 매개변수 곡선·극좌표·3D (원, 나선, 꽃, 곡면) | §7·§11 | 45초 | Lab | 구현 |
-| 06 | `analyze()` — 함수가 어떤 것인지 읽기 | README | 40초 | Lab | 계획 |
-| 07 | `slider()`와 `animate()` — 끌어서 보기 | README | 40초 | Lab | 계획 |
-| 08 | 내 데이터: 리스트·쌍, `dataset()`, `fit`, `table()` | §8·§12 | 45초 | Lab | 계획 |
+| 06 | `analyze()` — 함수가 어떤 것인지 읽기 | README | 40초 | Lab | 구현 |
+| 07 | `slider()`와 `animate()` — 끌어서 보기 | README | 40초 | Lab | 구현 |
+| 08 | 내 데이터: 리스트·쌍, `dataset()`, `fit`, `table()` | §8·§12 | 45초 | Lab | 구현 |
 | 09 | 탈출구 — `show_python()`이 보여 주는 NumPy+SymPy+Plotly 코드 | §9 | 40초 | Lab | 구현 |
-| 10 | 다른 사람에게 전달 — `worksheet()`와 HTML 한 파일 | §13 | 40초 | Lab + 브라우저 탭 | 계획 |
+| 10 | 다른 사람에게 전달 — `worksheet()`와 HTML 한 파일 | §13 | 40초 | Lab + 브라우저 탭 | 구현 |
 | 11 | 헷갈릴 때는 묻는다 — 모호한 축과 `parameters` | §11 | 35초 | Lab | 구현 |
 
 ### 파트 2 — 다른 환경 (20~29)
@@ -185,6 +185,15 @@ python -m venv .venv-video
 - **코드는 문서 앵커에서 온다.** `docs/tutorial_ko.md`의 코드 블록 앞에 `<!-- video:이름 -->` 주석을 21개 더했다(`first-plot`, `tan`, `show-python`, `ambiguous` 등). `code_from: "tutorial_ko.md#video:이름"`, 블록을 빈 줄로 나눈 덩어리는 `part:`로 고른다(예: `first-plot`의 `part: 0`은 import 줄). 앵커가 없으면 러너가 시나리오 로드 때 실패한다.
 - 첫 셀을 실행하면(커널이 `mathslate`를 가져오고 위젯을 준비하는 동안) 5~10초가 걸린다 — 아직 **가속 구간 처리(compose)가 없어 영상에 그대로 남는다**(01편 전체 약 21초, 05편 약 34초).
 - 04편의 `tan`은 이 PC에서 `713 samples | 6 discontinuities handled`와 극점 6개를 낸다 — 자막은 숫자를 쓰지 않았다.
+
+구현하며 확인한 것(06·07·08·10편):
+- **`analyze()` 결과는 Lab에서 접힌 `▶ analyze(x**3 - 3*x)`로 나온다**(HTML `<details>`) — 펼쳐야 보인다. 펼치면 `print`(텍스트)와 달리 **표(`<tr>`)**로 나온다: 행마다 `roots`, `maxima`, `increasing on` …. 그래서 `output_line`(텍스트 구절) 대신 `highlight: {selector: "tr:has-text('roots')"}`를 쓴다. 그 아래 `how each was obtained`(또 하나의 `<details>`)를 펼치면 값마다 `solveset(...)`로 풀었는지, `simplify(f(-x) -+ f(x)) == 0`처럼 어떻게 구했는지가 나온다(§10 6번의 solved/sampled 구분).
+- **`slider()`/`animate()`는 Plotly 자체 컨트롤이다**(ipywidgets 아님). 슬라이더 손잡이는 `.slider-grip-rect`, 레일은 `.slider-rail-rect` — 러너의 `drag_slider: {to: 0..1, seconds}`가 손잡이를 마우스로 레일 위치까지 끈다(구간을 잘게 나눠 천천히). 끌면 곡선이 21프레임 중 하나로 바뀌고 `s = 2.8` 같은 값이 슬라이더 위에 나온다. `animate()`는 `.updatemenu-button`의 `play`/`pause` 버튼이다(러너의 `click: {selector}`).
+- **`new_tab`은 같은 화면 위 오버레이다.** Playwright는 탭(페이지)마다 따로 녹화하므로 새 탭을 열면 영상에 안 찍힌다. 그래서 탭 막대를 흉내 낸 띠(`📄 handout.html`, `file:///handout.html`) 아래에 `/files/handout.html`을 **iframe**으로 띄우고, 마우스를 그래프 위로 움직인 뒤 걷는다. handout은 Plotly를 내장한 단일 파일(약 4.8MB)이라 인터넷 없이 열린다.
+- **자막 막대 초기화 스크립트는 최상위 문서에서만 돈다.** 처음엔 iframe 문서 안에서도 돌아 iframe 아래에 두 번째 자막 막대가 생겨(어두운 띠가 그림 아래 76px를 가렸다) 10편이 잘 보이지 않았다. `window.top !== window`면 건너뛴다.
+- **문서에 없는 코드는 `code:`로 직접 적는다.** `analyze(x**3 - 3*x)`·`animate(s*sin(x))`·`table(sin(x), (x, 0, 1))`·`page.save("handout.html")`는 문서에 코드 블록이 아니라 표·산문으로만 있어서 시나리오에 적었다(실행해 확인했다). 나머지(`slider`·`fit-line`·`worksheet` 등)는 앵커로 문서 블록을 가리킨다 — 앵커를 `tutorial_ko.md`에 4개(`data-list`·`data-pair`·`fit-line`·`worksheet`), `guide_ko.md`에 1개(`slider`) 더했다.
+- 8편의 `fit-line` 블록은 한 셀에 4줄이라 입력에 약 8초가 걸린다 — 영상 35초 중 20초 가까이가 입력·실행 대기다(compose 가속 대상).
+- 10편의 Lab 파일 목록은 `handout.html`이 생겨도 새로고침 전에는 안 보여서 그 장면은 넣지 않았다(계획서 10편 2번).
 
 구현 때 확인할 것:
 1. **셀에 글자를 칠 때 괄호 자동 닫기.** CodeMirror 6은 `(`를 치면 `)`를 자동으로 넣고, 사용자가 `)`를 치면 덮어쓴다. `keyboard.type`이 같은 결과를 내는지(`plot(sin(x)/x)`가 그대로 완성되는지) 확인한다. 따옴표·대괄호도.

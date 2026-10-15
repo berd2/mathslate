@@ -31,6 +31,7 @@ CAPTION_H = 76
 
 OVERLAY_SCRIPT = f"""
 (() => {{
+  if (window.top !== window) return;  // iframe(예: 10편에서 연 handout.html) 안에는 막대를 또 만들지 않는다
   const H = {CAPTION_H};
   const install = () => {{
     if (document.getElementById('__cap')) return;
@@ -178,6 +179,70 @@ def _do_highlight(page: Page, args: dict, state: dict) -> None:
         target.evaluate("el => { el.style.outline = el.dataset.hlold || ''; }")
 
 
+def _do_drag_slider(page: Page, args: dict, state: dict) -> None:
+    """Plotly 슬라이더의 손잡이를 레일의 `to`(0~1) 위치까지 마우스로 끈다. 구간을 잘게 나눠 천천히 움직인다."""
+    cell = _cell(page, args.get("cell", state["last_cell"] - 1))
+    grip = cell.locator(".slider-grip-rect").first
+    rail = cell.locator(".slider-rail-rect").first
+    grip.scroll_into_view_if_needed()
+    g, r = grip.bounding_box(), rail.bounding_box()
+    assert g and r, "슬라이더 손잡이를 찾지 못했다"
+    gx, gy = g["x"] + g["width"] / 2, g["y"] + g["height"] / 2
+    _move_cursor(page, gx, gy)
+    page.mouse.down()
+    steps = max(10, int(args.get("seconds", 3) * 25))
+    target = r["x"] + r["width"] * args["to"]
+    for i in range(1, steps + 1):
+        page.mouse.move(gx + (target - gx) * i / steps, gy)
+        page.wait_for_timeout(35)
+    page.mouse.up()
+    page.wait_for_timeout(600)
+
+
+def _do_click(page: Page, args: dict, state: dict) -> None:
+    cell = _cell(page, args.get("cell", state["last_cell"] - 1))
+    target = cell.locator(args["selector"]).first
+    target.scroll_into_view_if_needed()
+    box = target.bounding_box()
+    assert box, f"{args['selector']}의 위치를 알 수 없다"
+    _move_cursor(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    target.click()
+    page.wait_for_timeout(int(args.get("settle_ms", 500)))
+
+
+def _do_new_tab(page: Page, args: dict, base: str) -> None:
+    """만든 HTML 파일을 '새 탭'처럼 보여 준다. Playwright는 탭마다 따로 녹화하므로 같은 화면 위에 탭 막대+iframe 오버레이를 띄운다."""
+    root, token = base
+    url = f"{root}/files/{args['file']}?token={token}"
+    page.evaluate(
+        """([url, title]) => {
+          const o = document.createElement('div'); o.id = '__tab';
+          o.style.cssText = 'position:fixed;left:0;right:0;top:0;bottom:0;padding-bottom:76px;box-sizing:border-box;background:#dee1e6;z-index:2147483645;display:flex;flex-direction:column';
+          const bar = document.createElement('div');
+          bar.style.cssText = 'height:40px;display:flex;align-items:flex-end;padding:0 8px;gap:8px;font:14px sans-serif';
+          bar.innerHTML = `<div style="background:#fff;padding:8px 16px;border-radius:8px 8px 0 0;max-width:260px;white-space:nowrap">📄 ${title}</div>`
+            + `<div style="flex:1;background:#fff;margin:0 0 4px;padding:6px 12px;border-radius:14px;color:#555;white-space:nowrap;overflow:hidden">file:///${title}</div>`;
+          const f = document.createElement('iframe'); f.src = url; f.style.cssText = 'flex:1;border:0;background:#fff';
+          o.append(bar, f); document.body.append(o);
+        }""",
+        [url, args["file"]],
+    )
+    frame = page.frame_locator("#__tab iframe")
+    frame.locator(S["plotly"]).first.wait_for(timeout=30_000)
+    page.wait_for_timeout(1200)
+    if args.get("hover", True):
+        box = page.locator("#__tab iframe").bounding_box()
+        assert box
+        y = box["y"] + box["height"] * 0.55
+        _move_cursor(page, box["x"] + box["width"] * 0.25, y)
+        for i in range(30):
+            page.mouse.move(box["x"] + box["width"] * (0.25 + 0.4 * i / 30), y)
+            page.wait_for_timeout(60)
+    page.wait_for_timeout(int(args.get("seconds", 3) * 1000))
+    page.evaluate("() => document.getElementById('__tab')?.remove()")
+    page.wait_for_timeout(500)
+
+
 def _do_step(page: Page, step: dict, state: dict) -> None:
     (action, args), = step.items()
     if action == "cell":
@@ -187,6 +252,12 @@ def _do_step(page: Page, step: dict, state: dict) -> None:
         _do_run(page, args or {}, state)
     elif action == "highlight":
         _do_highlight(page, args, state)
+    elif action == "drag_slider":
+        _do_drag_slider(page, args, state)
+    elif action == "click":
+        _do_click(page, args, state)
+    elif action == "new_tab":
+        _do_new_tab(page, args, state["base"])
     elif action == "scroll":
         _cell(page, args["cell"]).scroll_into_view_if_needed()
         page.wait_for_timeout(500)
@@ -253,7 +324,7 @@ def run_scenario(scenario: Scenario, headed: bool = False) -> Path:
             page.wait_for_function("() => (document.querySelector('.jp-Notebook-ExecutionIndicator')?.title || '').includes('Idle') || /Idle/.test(document.body.innerText)", timeout=60_000)
             page.wait_for_timeout(1500)
             ready = time.time() - t0
-            state = {"last_cell": 0}
+            state = {"last_cell": 0, "base": (root, token)}
             for scene in scenario.scenes:
                 start = time.time() - t0 - ready
                 _set_caption(page, scene.caption)

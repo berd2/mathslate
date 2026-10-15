@@ -1,0 +1,29 @@
+title: analyze()
+subtitle: 함수가 어떤 것인지 읽기
+output: 06_analyze.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 먼저 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: analyze()는 함수가 어떤 것인지 알려 줍니다
+    steps:
+      - cell: {index: 1, code: "analyze(x**3 - 3*x)"}
+      - run: {wait_output: any, expect_text: "roots", timeout: 90}
+  - caption: 결과는 접혀 있습니다. ▶를 눌러 펼칩니다
+    steps:
+      - click: {selector: "summary"}
+      - wait: 1.5
+  - caption: 근이 sqrt(3)처럼 정확한 값으로 나옵니다
+    steps:
+      - highlight: {selector: "tr:has-text('roots')", seconds: 3.5}
+  - caption: 극값과 증가·감소 구간도 한 번에 읽습니다
+    steps:
+      - highlight: {selector: "tr:has-text('maxima')", seconds: 2}
+      - highlight: {selector: "tr:has-text('increasing on')", seconds: 2.5}
+  - caption: "각 값을 어떻게 구했는지도 펼쳐 볼 수 있습니다: 계산으로 푼 것과 표집으로 근사한 것을 구분합니다"
+    steps:
+      - click: {selector: "summary:has-text('how each was obtained')"}
+      - wait: 4

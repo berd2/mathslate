@@ -300,12 +300,14 @@ polar(sin(3*t))
 
 모든 것이 식으로 표현되는 것은 아닙니다. 숫자로 된 리스트도 사용할 수 있습니다:
 
+<!-- video:data-list -->
 ```python
 plot([2.0, 4.0, 8.0, 16.0, 32.0])
 ```
 
 리스트 두 개를 묶은 쌍은 x대 y 그래프로 동작합니다:
 
+<!-- video:data-pair -->
 ```python
 plot(([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 4.0, 9.0]))
 ```
@@ -454,6 +456,7 @@ plot((cos(t), sin(t), t), (t, 0, 12))
 
 지금까지의 모든 내용은 식(expression)에서 시작되었습니다. 실제 작업은 보통 측정 데이터에서 시작되며, 이것이 그 두 가지가 만나는 지점입니다:
 
+<!-- video:fit-line -->
 ```python
 readings = dataset({"x": [0, 1, 2, 3, 4], "y": [1.0, 3.1, 4.9, 7.2, 8.9]})
 c, d = symbols("c d", real=True)
@@ -475,6 +478,7 @@ print(plot(Matrix([[2, 1], [1, 3]]), verbose=False).plan.kind)
 
 ## 13. 다른 사람에게 전달하기
 
+<!-- video:worksheet -->
 ```python
 from mathslate.classroom import worksheet
 

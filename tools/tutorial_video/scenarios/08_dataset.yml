@@ -1,0 +1,30 @@
+title: 내 데이터
+subtitle: 리스트·쌍, dataset과 fit, table
+output: 08_dataset.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 먼저 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: 숫자 리스트는 데이터 하나입니다
+    steps:
+      - cell: {index: 1, code_from: "tutorial_ko.md#video:data-list"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 리스트 두 개의 쌍은 x-y 데이터입니다
+    steps:
+      - cell: {index: 2, code_from: "tutorial_ko.md#video:data-pair"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 측정값을 dataset으로 만들고, 모델을 공책에 쓰듯 적으면 데이터에 맞춰 줍니다
+    steps:
+      - cell: {index: 3, code_from: "tutorial_ko.md#video:fit-line"}
+      - run: {wait_output: any, timeout: 90}
+  - caption: 맞춘 매개변수 값이 나옵니다
+    steps:
+      - highlight: {seconds: 4}
+  - caption: table()로 같은 함수를 숫자 표로도 봅니다
+    steps:
+      - cell: {index: 4, code: "table(sin(x), (x, 0, 1))"}
+      - run: {wait_output: any, timeout: 90}
+      - highlight: {seconds: 3}

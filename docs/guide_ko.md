@@ -224,6 +224,7 @@ print(f.analyze())
 
 예시 몇 개를 실제로 돌려 보면 다음과 같습니다.
 
+<!-- video:slider -->
 ```python
 s = slider(1, 3, name="s")
 plot(s*sin(x))
