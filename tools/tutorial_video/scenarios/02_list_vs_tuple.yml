@@ -1,0 +1,24 @@
+title: 여러 곡선과 단 하나의 규칙
+subtitle: 리스트 vs 튜플
+output: 02_list_vs_tuple.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 먼저 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: 리스트는 곡선 여러 개를 겹쳐 그립니다
+    steps:
+      - cell: {index: 1, code_from: "tutorial_ko.md#video:list-plot"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 메시지에도 곡선이 몇 개인지 나옵니다
+    steps:
+      - highlight: {seconds: 3}
+  - caption: 튜플은 하나의 매개변수 곡선, 원 하나입니다
+    steps:
+      - cell: {index: 2, code_from: "tutorial_ko.md#video:tuple-plot"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 같은 식이라도 괄호가 의도를 알려 줍니다. 외울 것은 이것 하나입니다
+    steps:
+      - highlight: {seconds: 3.5}

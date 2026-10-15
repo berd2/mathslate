@@ -1,0 +1,30 @@
+title: 그리기 어려운 함수
+subtitle: tan, 1/x, floor, sqrt
+output: 04_discontinuities.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 먼저 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: tan(x)는 극점마다 끊어서 그립니다. 가짜 수직선이 없습니다
+    steps:
+      - cell: {index: 1, code_from: "tutorial_ko.md#video:tan"}
+      - run: {wait_output: figure, timeout: 90}
+      - highlight: {seconds: 3}
+  - caption: 1/x는 0에서 끊깁니다
+    steps:
+      - cell: {index: 2, code_from: "tutorial_ko.md#video:reciprocal"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: floor(x)는 정수마다 끊깁니다
+    steps:
+      - cell: {index: 3, code_from: "tutorial_ko.md#video:floor"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: sqrt(x)는 정의역 밖을 아예 계산하지 않습니다
+    steps:
+      - cell: {index: 4, code_from: "tutorial_ko.md#video:sqrt"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 끊긴 곳은 심볼릭 계산으로 찾습니다 — 추측이 아닙니다
+    steps:
+      - highlight: {seconds: 3.5}

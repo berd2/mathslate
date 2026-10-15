@@ -1,0 +1,17 @@
+title: 탈출구 — show_python()
+subtitle: MathSlate가 대신 해 준 일
+output: 09_show_python.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 먼저 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: show_python()을 붙이면 같은 그림을 만드는 일반 코드가 나옵니다
+    steps:
+      - cell: {index: 1, code_from: "tutorial_ko.md#video:show-python"}
+      - run: {wait_output: any, expect_text: "Equivalent code", timeout: 90}
+  - caption: "첫 줄의 주석: 이 코드는 출력된 그대로 실행됩니다"
+    steps:
+      - highlight: {output_line: "Equivalent code — this runs exactly as printed.", seconds: 3.5}

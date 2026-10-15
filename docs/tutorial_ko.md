@@ -31,6 +31,7 @@ macOS/Linux는 `scripts/quickstart.sh`를 실행하면 같은 설정을 자동�
 
 ## 1. 첫 번째 그래프
 
+<!-- video:first-plot -->
 ```python
 from mathslate import *
 
@@ -91,6 +92,7 @@ curve | x ∈ [-10, 10] | 411 samples | 1 discontinuity handled
 
 출력 메시지가 거슬린다면 다음과 같이 끌 수 있습니다:
 
+<!-- video:verbose-off -->
 ```python
 set_verbose(False)
 plot(sin(x))          # 이제 메시지가 출력되지 않습니다.
@@ -100,6 +102,7 @@ set_verbose(True)
 
 또는 콘솔 대신 결과 객체에서 이 내용을 읽어올 수도 있습니다:
 
+<!-- video:summary -->
 ```python
 f = plot(sin(x)/x)
 print(f.summary())
@@ -116,12 +119,14 @@ print(f.summary())
 
 따라서 리스트는 여러 곡선을 겹쳐서 그립니다:
 
+<!-- video:list-plot -->
 ```python
 plot([sin(x), cos(x), sin(x) + cos(x)])
 ```
 
 반면 튜플은 하나의 매개변수 곡선으로, 두 식이 이동하는 한 점의 `x`와 `y`를 나타냅니다:
 
+<!-- video:tuple-plot -->
 ```python
 plot((cos(t), sin(t)))
 ```
@@ -136,6 +141,7 @@ plot((cos(t), sin(t)))
 
 MathSlate는 기본적으로 `-10`부터 `10`까지를 선택했습니다. 다른 범위를 원한다면 직접 지정하세요. 범위는 `(symbol, from, to)` 형태의 튜플로 작성합니다:
 
+<!-- video:range -->
 ```python
 plot(sin(x), (x, 0, 6.28))
 ```
@@ -144,10 +150,12 @@ plot(sin(x), (x, 0, 6.28))
 
 이 외에도 몇 가지를 더 설정할 수 있습니다:
 
+<!-- video:title -->
 ```python
 plot(exp(-x**2), (x, -3, 3), title="A bell curve", label="Gaussian")
 ```
 
+<!-- video:points -->
 ```python
 plot(sin(x), points=2000)
 ```
@@ -162,18 +170,22 @@ plot(sin(x), points=2000)
 
 인수 없이 다음 명령들을 실행해 보세요:
 
+<!-- video:tan -->
 ```python
 plot(tan(x))
 ```
 
+<!-- video:reciprocal -->
 ```python
 plot(1/x)
 ```
 
+<!-- video:floor -->
 ```python
 plot(floor(x))
 ```
 
+<!-- video:sqrt -->
 ```python
 plot(sqrt(x))
 ```
@@ -254,6 +266,7 @@ plot(exp(x), yscale="log")
 
 매개변수 곡선은 앞서 이미 만나보았습니다:
 
+<!-- video:circle -->
 ```python
 plot((cos(t), sin(t)))
 ```
@@ -262,16 +275,19 @@ plot((cos(t), sin(t)))
 
 반지름이 점점 커지면 나선형이 됩니다:
 
+<!-- video:spiral -->
 ```python
 plot((t*cos(t), t*sin(t)), (t, 0, 20))
 ```
 
 그 다음은 `r = f(θ)` 형태인 극좌표(polar)입니다. 이 경우 MathSlate는 고의로 추측을 거부합니다. `1 + cos(t)`라고 쓰여진 식은 그 자체로 단일 변수에 대한 아주 평범한 함수입니다. 그 식 안에 파동(wave)을 뜻하는지 심장형(cardioid)을 뜻하는지 알려주는 정보는 없습니다. 따라서 사용자가 직접 지정해야 합니다:
 
+<!-- video:polar-cardioid -->
 ```python
 polar(1 + cos(t))
 ```
 
+<!-- video:polar-rose -->
 ```python
 polar(sin(3*t))
 ```
@@ -310,6 +326,7 @@ plot(np.tanh, (x, -5, 5))
 
 이것이 전체 프로젝트가 구축된 핵심 기능입니다.
 
+<!-- video:show-python -->
 ```python
 plot(sin(x)/x).show_python()
 ```
@@ -336,6 +353,7 @@ fn = sp.lambdify(x, expr, 'numpy')
 
 이 코드에 *무엇이 포함되어 있는지* 확인해 보세요. 단순히 `linspace(-10, 10, 1000)`을 넣고 잘 되길 바라는 코드가 아닙니다. 정의역의 각 조각, 끊어진 선들, y축 윈도우까지, MathSlate가 여러분을 대신해 내렸던 모든 결정이 코드로 작성되어 있습니다. 이제 여러분이 이 코드를 직접 수정할 수 있습니다. 어려운 함수로 한번 시도해 보세요:
 
+<!-- video:show-python-tan -->
 ```python
 plot(tan(x)).show_python()
 ```
@@ -395,6 +413,7 @@ MathSlate는 이 기능들을 새로 작성하지 않았습니다. 이에 대한
 
 정말로 모호한 상황을 주었을 때 어떤 일이 일어나는지 확인해 보세요:
 
+<!-- video:ambiguous -->
 ```python raises=AmbiguousAxisError
 a, b, c = symbols("a b c", real=True)
 plot(a*b*c)
@@ -402,6 +421,7 @@ plot(a*b*c)
 
 자유 기호 3개 중 어느 것도 축 이름과 유사하지 않고, 어느 쪽이 가로축인지 알 수 있는 지표가 없습니다. 어느 하나를 골라 사용자가 요구하지 않은 것을 그리는 대신, MathSlate는 메시지 자체가 질문인 에러를 발생시키며 문제를 해결할 수 있는 정확한 호출을 보여줍니다.
 
+<!-- video:parameters -->
 ```python
 a, b, c = symbols("a b c", real=True)
 plot(a*b*c, (a, -5, 5), parameters={b: 2, c: 3})
@@ -413,6 +433,7 @@ plot(a*b*c, (a, -5, 5), parameters={b: 2, c: 3})
 
 하지만 자유 기호가 두 개인 경우는 에러가 아닙니다. 곡면(surface)이 됩니다:
 
+<!-- video:surface -->
 ```python
 plot(x*y)
 ```

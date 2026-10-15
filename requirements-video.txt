@@ -1,0 +1,5 @@
+# 사용법 영상 자동 생성용 (docs/design/TUTORIAL_VIDEO_PLAN.md §7). 앱 의존성이 아니다.
+# 설치: python -m venv .venv-video && .venv-video/bin/pip install -e ".[starter]" -r requirements-video.txt
+playwright>=1.45
+pyyaml>=6.0
+imageio-ffmpeg>=0.5   # 준비 구간 자르기·변환용 ffmpeg(Playwright가 받는 최소 빌드는 디코더가 없다)

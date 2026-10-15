@@ -6,7 +6,7 @@ Nemo1API의 Qt 합성도, Slingshot의 웹앱 녹화도 그대로 쓸 수 없다
 **커널이 계산하는 동안의 대기**다.
 
 ```
-docs/TUTORIAL_VIDEO_PLAN.md                  ← 무엇을 보여줄지 (이 문서)
+docs/design/TUTORIAL_VIDEO_PLAN.md                ← 무엇을 보여줄지 (이 문서)
 tools/tutorial_video/scenario.py             ← 시나리오 로드·검증 (YAML)
 tools/tutorial_video/scenarios/*.yml         ← 챕터당 시나리오 하나
 tools/tutorial_video/jupyter_env.py          ← 격리된 Jupyter Lab 서버를 띄우고 내린다
@@ -16,8 +16,7 @@ tools/tutorial_video/out/*.mp4, *.srt        ← 결과 (git에 넣지 않는다
 requirements-video.txt                       ← playwright, pyyaml, jupyterlab, (starter extra)
 ```
 
-> **상태: 계획 단계.** §10 카드는 `README.md`·`docs/tutorial_ko.md`·`examples/mathslate_tour.py`를 읽고 쓴 것이다.
-> 러너·시나리오는 아직 없다. Jupyter Lab DOM 클래스(`.jp-Notebook` 등)와 Plotly 렌더링 방식은 **돌려 보기 전에는 확정할 수 없다**(§9).
+> **상태: 러너(M0·M1) 구현됨, 01~05·09·11편 시나리오가 돈다.** `tools/tutorial_video/`에 `jupyter_env.py`·`scenario.py`·`runner.py`가 있고 실제로 돌려 webm·`.ko.srt`와 화면을 확인했다(§9 "구현하며 확인한 것"). 합성(`compose.py` — mp4·대기 가속)과 06·07·08·10편, 20·21·00편은 아직 없다. §10 카드는 `README.md`·`docs/tutorial_ko.md`·`examples/mathslate_tour.py`를 읽고 쓴 것이다.
 
 ## 0. 왜 이 방식인가
 
@@ -50,17 +49,17 @@ requirements-video.txt                       ← playwright, pyyaml, jupyterlab,
 | # | 제목 | 튜토리얼 | 길이(안) | 환경 | 상태 |
 |---|---|---|---|---|---|
 | 00 | 설치와 첫 실행 (`mathslate[starter]`, Jupyter Lab 열기) | §0 | 40초 | 터미널 + Lab | 계획 |
-| 01 | 첫 그래프 — `plot(sin(x)/x)`와 출력 메시지 읽기 | §1·§2 | 45초 | Lab | 계획 |
-| 02 | 여러 곡선과 단 하나의 규칙 (리스트 vs 튜플) | §3 | 40초 | Lab | 계획 |
-| 03 | 범위 지정과 옵션 — `(x, 0, 6.28)`, `title=`, `points=` | §4 | 40초 | Lab | 계획 |
-| 04 | 그리기 어려운 함수 — `tan(x)`·`1/x`·`floor(x)` | §5 | 45초 | Lab | 계획 |
-| 05 | 매개변수 곡선·극좌표·3D (원, 나선, 꽃, 곡면) | §7·§11 | 45초 | Lab | 계획 |
+| 01 | 첫 그래프 — `plot(sin(x)/x)`와 출력 메시지 읽기 | §1·§2 | 45초 | Lab | 구현 |
+| 02 | 여러 곡선과 단 하나의 규칙 (리스트 vs 튜플) | §3 | 40초 | Lab | 구현 |
+| 03 | 범위 지정과 옵션 — `(x, 0, 6.28)`, `title=`, `points=` | §4 | 40초 | Lab | 구현 |
+| 04 | 그리기 어려운 함수 — `tan(x)`·`1/x`·`floor(x)` | §5 | 45초 | Lab | 구현 |
+| 05 | 매개변수 곡선·극좌표·3D (원, 나선, 꽃, 곡면) | §7·§11 | 45초 | Lab | 구현 |
 | 06 | `analyze()` — 함수가 어떤 것인지 읽기 | README | 40초 | Lab | 계획 |
 | 07 | `slider()`와 `animate()` — 끌어서 보기 | README | 40초 | Lab | 계획 |
 | 08 | 내 데이터: 리스트·쌍, `dataset()`, `fit`, `table()` | §8·§12 | 45초 | Lab | 계획 |
-| 09 | 탈출구 — `show_python()`이 보여 주는 NumPy+SymPy+Plotly 코드 | §9 | 40초 | Lab | 계획 |
+| 09 | 탈출구 — `show_python()`이 보여 주는 NumPy+SymPy+Plotly 코드 | §9 | 40초 | Lab | 구현 |
 | 10 | 다른 사람에게 전달 — `worksheet()`와 HTML 한 파일 | §13 | 40초 | Lab + 브라우저 탭 | 계획 |
-| 11 | 헷갈릴 때는 묻는다 — 모호한 축과 `parameters` | §11 | 35초 | Lab | 계획 |
+| 11 | 헷갈릴 때는 묻는다 — 모호한 축과 `parameters` | §11 | 35초 | Lab | 구현 |
 
 ### 파트 2 — 다른 환경 (20~29)
 
@@ -172,6 +171,20 @@ python -m venv .venv-video
 - `worksheet(...)`는 `path="handout.html"`로 HTML 한 파일을 만들고 Plotly를 한 번만 내장한다(`standalone` 기본).
 - marimo는 `import *`를 거부한다 — 21편의 요점이다(튜토리얼 §1.1).
 - 라이브러리의 핵심(그리기·`analyze`·표·적합·내보내기)은 AI·네트워크 없이 돈다(`README`). **`explain`·`describe`·`suggest_model`·`ask`는 `mathslate.ai`**(공급자·키 필요)라 01~11편에는 넣지 않는다.
+
+구현하며 확인한 것(M0·M1, 01~05·09·11편):
+- **계획서가 `docs/`에 있으면 테스트가 깨진다.** `tests/test_docs.py`는 `docs/*.md`마다 실행 가능한 python 블록이 있어야 한다고 요구한다 — 그래서 이 계획서를 `docs/design/`(그 테스트가 훑지 않는 하위 폴더)로 옮겼다. (처음 올린 커밋 `07f69b9`부터 그 테스트가 실패해 있었다.)
+- **§9-1 괄호 자동 닫기: 문제없다.** `keyboard.type`으로 `plot(sin(x)/x)`를 치면 그대로 완성된다. 따옴표도 같다(`title="A bell curve"`). **§9-2·7**은 `jupyter_env.py`의 사용자 설정(공지·뉴스·자동완성 끔)으로 막았고 첫 화면은 깨끗하다.
+- **§9-3 Plotly는 헤드리스 Chromium에서 그려진다 — 3D 곡면(`plot(x*y)`)도 WebGL(SwiftShader, `--use-gl=swiftshader --enable-unsafe-swiftshader`)로 나온다.** 그림은 Plotly 단독이 아니라 anywidget 컨트롤(x/y 범위, `Fit Y`, `Samples` 등)이 붙은 위젯이다. 셀 출력의 `.js-plotly-plot`로 기다린다.
+- **새 노트북은 `kernelspec`이 있어야 한다.** API로 빈 노트북을 만들 때 메타데이터에 커널 이름을 안 넣으면 Lab이 `Select Kernel` 창을 띄운다. 러너는 코드 셀 하나와 `python3` kernelspec이 든 `notebook.ipynb`를 `PUT /api/contents`로 만들어 연다.
+- **자막 영역은 `body`가 아니라 `#main`을 줄여서 만든다.** `body`에 `transform`/`height`를 주면 Lab의 절대 배치가 깨졌다(툴바가 잘리고 자막 막대가 위로 올라갔다). `#main{height:calc(100% - 76px)}`와 하단 고정 막대로 상태 표시줄(`Idle`)을 그대로 두고 자막을 아래에 둔다.
+- **서버는 `--allow-root`가 필요하다**(컨테이너는 root). 임시 디렉터리에서만 도는 격리 서버라 문제없다.
+- **준비 구간 제거**: 노트북을 열고 커널이 `Idle`이 될 때까지의 구간을 영상 앞에서 ffmpeg로 잘라낸다(`imageio-ffmpeg` 필요 — `requirements-video.txt`).
+- **실행 완료는 셀 프롬프트가 `[n]:`이 되는 것으로 안다**(`[*]`가 끝났을 때). 그 뒤에 `expect_text`/`expect_error`는 출력이 DOM에 그려질 때까지 기다려야 한다 — 실행이 끝난 직후엔 오류 출력이 아직 없는 때가 있다(11편에서 실제로 한 번 실패했다).
+- **강조는 출력 텍스트의 한 구절을 `Range`로 찾아 그 위에 주황 테두리를 그린다**(`output_line`). ANSI 색이 입혀진 오류 메시지는 텍스트 노드가 갈려 있어 `AmbiguousAxisError: …`처럼 색이 바뀌는 경계를 넘는 구절은 못 찾는다 — 한 색 안의 구절(`3 free symbols found (a, b, c).`)을 쓴다.
+- **코드는 문서 앵커에서 온다.** `docs/tutorial_ko.md`의 코드 블록 앞에 `<!-- video:이름 -->` 주석을 21개 더했다(`first-plot`, `tan`, `show-python`, `ambiguous` 등). `code_from: "tutorial_ko.md#video:이름"`, 블록을 빈 줄로 나눈 덩어리는 `part:`로 고른다(예: `first-plot`의 `part: 0`은 import 줄). 앵커가 없으면 러너가 시나리오 로드 때 실패한다.
+- 첫 셀을 실행하면(커널이 `mathslate`를 가져오고 위젯을 준비하는 동안) 5~10초가 걸린다 — 아직 **가속 구간 처리(compose)가 없어 영상에 그대로 남는다**(01편 전체 약 21초, 05편 약 34초).
+- 04편의 `tan`은 이 PC에서 `713 samples | 6 discontinuities handled`와 극점 6개를 낸다 — 자막은 숫자를 쓰지 않았다.
 
 구현 때 확인할 것:
 1. **셀에 글자를 칠 때 괄호 자동 닫기.** CodeMirror 6은 `(`를 치면 `)`를 자동으로 넣고, 사용자가 `)`를 치면 덮어쓴다. `keyboard.type`이 같은 결과를 내는지(`plot(sin(x)/x)`가 그대로 완성되는지) 확인한다. 따옴표·대괄호도.

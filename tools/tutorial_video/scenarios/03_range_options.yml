@@ -1,0 +1,25 @@
+title: 범위 지정과 옵션
+subtitle: (x, 0, 6.28), title=, points=
+output: 03_range_options.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 먼저 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: 범위는 (기호, 시작, 끝) 튜플로 정합니다
+    steps:
+      - cell: {index: 1, code_from: "tutorial_ko.md#video:range"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 메시지의 범위가 이제 내가 정한 값입니다
+    steps:
+      - highlight: {output_line: 'x ∈ [0, 6.28]', seconds: 3}
+  - caption: 제목과 이름도 붙입니다
+    steps:
+      - cell: {index: 2, code_from: "tutorial_ko.md#video:title"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 점 개수도 정할 수 있지만 거의 필요 없습니다
+    steps:
+      - cell: {index: 3, code_from: "tutorial_ko.md#video:points"}
+      - run: {wait_output: figure, timeout: 90}

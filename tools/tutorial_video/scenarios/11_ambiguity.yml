@@ -1,0 +1,21 @@
+title: 헷갈릴 때는 묻는다
+subtitle: 모호한 축과 parameters
+output: 11_ambiguity.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 먼저 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: 자유 기호가 셋이면 어느 것이 축인지 알 수 없습니다
+    steps:
+      - cell: {index: 1, code_from: "tutorial_ko.md#video:ambiguous"}
+      - run: {expect_error: AmbiguousAxisError, timeout: 60}
+  - caption: 추측하지 않고, 메시지 자체가 질문입니다. 해결할 호출까지 보여 줍니다
+    steps:
+      - highlight: {output_line: '3 free symbols found (a, b, c).', seconds: 4}
+  - caption: parameters는 축이 아닌 기호의 값을 고정합니다
+    steps:
+      - cell: {index: 2, code_from: "tutorial_ko.md#video:parameters"}
+      - run: {wait_output: figure, timeout: 90}

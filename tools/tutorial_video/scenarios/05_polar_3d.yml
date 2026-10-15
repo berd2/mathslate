@@ -1,0 +1,30 @@
+title: 매개변수 곡선·극좌표·곡면
+subtitle: 원, 나선, 장미, 곡면
+output: 05_polar_3d.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 먼저 한 줄로 가져옵니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: 한 바퀴(0에서 2π)가 기본 범위입니다
+    steps:
+      - cell: {index: 1, code_from: "tutorial_ko.md#video:circle"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 반지름이 커지면 나선입니다
+    steps:
+      - cell: {index: 2, code_from: "tutorial_ko.md#video:spiral"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 극좌표는 추측하지 않고 polar()로 말해 줍니다
+    steps:
+      - cell: {index: 3, code_from: "tutorial_ko.md#video:polar-cardioid"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 세 잎 장미입니다
+    steps:
+      - cell: {index: 4, code_from: "tutorial_ko.md#video:polar-rose"}
+      - run: {wait_output: figure, timeout: 90}
+  - caption: 자유 기호가 둘이면 곡면입니다
+    steps:
+      - cell: {index: 5, code_from: "tutorial_ko.md#video:surface"}
+      - run: {wait_output: figure, timeout: 90}

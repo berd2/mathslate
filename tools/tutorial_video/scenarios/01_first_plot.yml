@@ -1,0 +1,20 @@
+title: 첫 그래프
+subtitle: plot(sin(x)/x) 한 줄과 출력 메시지
+output: 01_first_plot.mp4
+setup:
+  notebook: blank
+scenes:
+  - caption: 첫 셀에 import 한 줄이 설정의 전부입니다
+    steps:
+      - cell: {index: 0, code_from: "tutorial_ko.md#video:first-plot", part: 0}
+      - run: {wait_output: any, timeout: 90}
+  - caption: plot() 한 줄로 그래프가 나옵니다. symbols도 linspace도 show도 필요 없습니다
+    steps:
+      - cell: {index: 1, code_from: "tutorial_ko.md#video:first-plot", part: 1}
+      - run: {wait_output: figure, expect_text: "1 discontinuity handled", timeout: 90}
+  - caption: MathSlate가 무엇을 판단했는지 한 줄로 알려 줍니다
+    steps:
+      - highlight: {output_line: "curve | x ∈ [-10, 10] | 411 samples | 1 discontinuity handled", seconds: 3.5}
+  - caption: 0에서 끊어지는 것도 알아냈습니다
+    steps:
+      - highlight: {output_line: "singularities at x = 0", seconds: 3}
